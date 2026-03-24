@@ -1,0 +1,895 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flutophone Smartboard App</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        /* Custom styles to handle ranges and inputs */
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 100%;
+            background: transparent;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 20px;
+            width: 20px;
+            border-radius: 50%;
+            background: #6366f1;
+            cursor: pointer;
+            margin-top: -8px;
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 6px;
+            cursor: pointer;
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        .hide-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .hide-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 font-sans min-h-screen">
+
+    <div id="root" class="min-h-screen p-4 md:p-6 flex flex-col xl:flex-row gap-6">
+        <!-- Rendered via JS -->
+    </div>
+
+    <script>
+        // --- Constants & Flutophone Data ---
+        const TEMPO_DEFAULT = 90;
+        const PITCHES = ['C4', 'D4', 'E4', 'F4', 'F#4', 'G4', 'A4', 'B4', 'C5', 'D5'];
+
+        const pitchOffsets = {
+            'D5': 44, 'C5': 50, 'B4': 56, 'A4': 62, 'G4': 68,
+            'F#4': 74, 'F4': 74, 'E4': 80, 'D4': 86, 'C4': 92,
+            'Rest': 56, 
+        };
+
+        const frequencies = {
+            'C4': 261.63 * 2, 'D4': 293.66 * 2, 'E4': 329.63 * 2,
+            'F4': 349.23 * 2, 'F#4': 369.99 * 2, 'G4': 392.00 * 2,
+            'A4': 440.00 * 2, 'B4': 493.88 * 2, 'C5': 523.25 * 2, 'D5': 587.33 * 2
+        };
+
+        const durationMap = { 
+            'w': 4, 'wr': 4, 'dh': 3, 'dhr': 3, 'h': 2, 'hr': 2,
+            'dq': 1.5, 'dqr': 1.5, 'q': 1, 'qr': 1, 'e': 0.5, 'er': 0.5,
+            's': 0.25, 'sr': 0.25
+        };
+
+        const fingerings = {
+            'C4': { thumb: true, holes: [1, 2, 3, 4, 5, 6, 7] },
+            'D4': { thumb: true, holes: [1, 2, 3, 4, 5, 6] },
+            'E4': { thumb: true, holes: [1, 2, 3, 4, 5] },
+            'F4': { thumb: true, holes: [1, 2, 3, 4] },
+            'F#4': { thumb: true, holes: [1, 2, 3, 5, 6] },
+            'G4': { thumb: true, holes: [1, 2, 3] },
+            'A4': { thumb: true, holes: [1, 2] },
+            'B4': { thumb: true, holes: [1] },
+            'C5': { thumb: true, holes: [2] },
+            'D5': { thumb: false, holes: [2] },
+            'Rest': { thumb: false, holes: [] }
+        };
+
+        const SONG_LIBRARY = [
+            {
+                id: 1, title: 'Hot Cross Buns', belt: 'White', beatsPerMeasure: 4,
+                notes: [
+                { pitch: 'B4', type: 'q', lyric: 'Hot', m: 1 }, { pitch: 'A4', type: 'q', lyric: 'cross', m: 1 }, { pitch: 'G4', type: 'h', lyric: 'buns,', m: 1 },
+                { pitch: 'B4', type: 'q', lyric: 'Hot', m: 2 }, { pitch: 'A4', type: 'q', lyric: 'cross', m: 2 }, { pitch: 'G4', type: 'h', lyric: 'buns,', m: 2 },
+                { pitch: 'G4', type: 'e', lyric: 'One', m: 3 }, { pitch: 'G4', type: 'e', lyric: 'a', m: 3 }, { pitch: 'G4', type: 'e', lyric: 'pen-', m: 3 }, { pitch: 'G4', type: 'e', lyric: 'ny,', m: 3 }, { pitch: 'A4', type: 'e', lyric: 'Two', m: 3 }, { pitch: 'A4', type: 'e', lyric: 'a', m: 3 }, { pitch: 'A4', type: 'e', lyric: 'pen-', m: 3 }, { pitch: 'A4', type: 'e', lyric: 'ny,', m: 3 },
+                { pitch: 'B4', type: 'q', lyric: 'Hot', m: 4 }, { pitch: 'A4', type: 'q', lyric: 'cross', m: 4 }, { pitch: 'G4', type: 'h', lyric: 'buns!', m: 4 }
+                ]
+            },
+            {
+                id: 2, title: 'Gently Sleep', belt: 'Yellow', beatsPerMeasure: 4,
+                notes: [
+                { pitch: 'G4', type: 'q', lyric: 'Gen-', m: 1 }, { pitch: 'A4', type: 'q', lyric: 'tly', m: 1 }, { pitch: 'B4', type: 'h', lyric: 'sleep,', m: 1 },
+                { pitch: 'A4', type: 'h', lyric: 'my', m: 2 }, { pitch: 'G4', type: 'h', lyric: 'sweet', m: 2 },
+                { pitch: 'G4', type: 'q', lyric: 'child', m: 3 }, { pitch: 'A4', type: 'q', lyric: 'so', m: 3 }, { pitch: 'B4', type: 'q', lyric: 'soft', m: 3 }, { pitch: 'A4', type: 'q', lyric: 'and', m: 3 },
+                { pitch: 'G4', type: 'w', lyric: 'mild.', m: 4 },
+                { pitch: 'G4', type: 'q', lyric: 'Gen-', m: 5 }, { pitch: 'A4', type: 'q', lyric: 'tly', m: 5 }, { pitch: 'B4', type: 'h', lyric: 'sleep,', m: 5 },
+                { pitch: 'A4', type: 'h', lyric: 'my', m: 6 }, { pitch: 'G4', type: 'h', lyric: 'sweet', m: 6 },
+                { pitch: 'G4', type: 'q', lyric: 'child', m: 7 }, { pitch: 'A4', type: 'q', lyric: 'so', m: 7 }, { pitch: 'B4', type: 'q', lyric: 'soft', m: 7 }, { pitch: 'A4', type: 'q', lyric: 'and', m: 7 },
+                { pitch: 'G4', type: 'w', lyric: 'mild.', m: 8 }
+                ]
+            },
+            {
+                id: 3, title: 'Merrily We Roll Along', belt: 'Orange', beatsPerMeasure: 4,
+                notes: [
+                { pitch: 'B4', type: 'q', lyric: 'Mer-', m: 1 }, { pitch: 'A4', type: 'q', lyric: 'ri-', m: 1 }, { pitch: 'G4', type: 'q', lyric: 'ly', m: 1 }, { pitch: 'A4', type: 'q', lyric: 'we', m: 1 },
+                { pitch: 'B4', type: 'q', lyric: 'roll', m: 2 }, { pitch: 'B4', type: 'q', lyric: 'a-', m: 2 }, { pitch: 'B4', type: 'h', lyric: 'long,', m: 2 },
+                { pitch: 'A4', type: 'q', lyric: 'Roll', m: 3 }, { pitch: 'A4', type: 'q', lyric: 'a-', m: 3 }, { pitch: 'A4', type: 'h', lyric: 'long,', m: 3 },
+                { pitch: 'B4', type: 'q', lyric: 'Roll', m: 4 }, { pitch: 'D5', type: 'q', lyric: 'a-', m: 4 }, { pitch: 'D5', type: 'h', lyric: 'long!', m: 4 },
+                { pitch: 'B4', type: 'q', lyric: 'Mer-', m: 5 }, { pitch: 'A4', type: 'q', lyric: 'ri-', m: 5 }, { pitch: 'G4', type: 'q', lyric: 'ly', m: 5 }, { pitch: 'A4', type: 'q', lyric: 'we', m: 5 },
+                { pitch: 'B4', type: 'q', lyric: 'roll', m: 6 }, { pitch: 'B4', type: 'q', lyric: 'a-', m: 6 }, { pitch: 'B4', type: 'q', lyric: 'long,', m: 6 }, { pitch: 'B4', type: 'q', lyric: 'O\'er', m: 6 },
+                { pitch: 'A4', type: 'q', lyric: 'the', m: 7 }, { pitch: 'A4', type: 'q', lyric: 'deep', m: 7 }, { pitch: 'B4', type: 'q', lyric: 'blue', m: 7 }, { pitch: 'A4', type: 'q', lyric: 'sea!', m: 7 },
+                { pitch: 'G4', type: 'w', lyric: '', m: 8 }
+                ]
+            },
+            {
+                id: 4, title: 'It\'s Raining', belt: 'Green', beatsPerMeasure: 4,
+                notes: [
+                { pitch: 'E4', type: 'q', lyric: 'It\'s', m: 1 }, { pitch: 'G4', type: 'q', lyric: 'rain-', m: 1 }, { pitch: 'A4', type: 'h', lyric: 'ing,', m: 1 },
+                { pitch: 'E4', type: 'q', lyric: 'it\'s', m: 2 }, { pitch: 'G4', type: 'q', lyric: 'pour-', m: 2 }, { pitch: 'A4', type: 'h', lyric: 'ing,', m: 2 },
+                { pitch: 'E4', type: 'q', lyric: 'The', m: 3 }, { pitch: 'E4', type: 'q', lyric: 'old', m: 3 }, { pitch: 'G4', type: 'q', lyric: 'man', m: 3 }, { pitch: 'G4', type: 'q', lyric: 'is', m: 3 },
+                { pitch: 'A4', type: 'w', lyric: 'snor-ing!', m: 4 }
+                ]
+            },
+            {
+                id: 5, title: 'Old MacDonald', belt: 'Purple', beatsPerMeasure: 4,
+                notes: [
+                { pitch: 'G4', type: 'q', lyric: 'Old', m: 1 }, { pitch: 'G4', type: 'q', lyric: 'Mac-', m: 1 }, { pitch: 'G4', type: 'q', lyric: 'Don-', m: 1 }, { pitch: 'D4', type: 'q', lyric: 'ald', m: 1 },
+                { pitch: 'E4', type: 'q', lyric: 'had', m: 2 }, { pitch: 'E4', type: 'q', lyric: 'a', m: 2 }, { pitch: 'D4', type: 'q', lyric: 'farm,', m: 2 }, { pitch: 'Rest', type: 'qr', lyric: '', m: 2 },
+                { pitch: 'B4', type: 'q', lyric: 'E', m: 3 }, { pitch: 'B4', type: 'q', lyric: 'I', m: 3 }, { pitch: 'A4', type: 'q', lyric: 'E', m: 3 }, { pitch: 'A4', type: 'q', lyric: 'I', m: 3 },
+                { pitch: 'G4', type: 'dh', lyric: 'O.', m: 4 }, { pitch: 'Rest', type: 'qr', lyric: '', m: 4 },
+                { pitch: 'D4', type: 'e', lyric: 'With', m: 5 }, { pitch: 'D4', type: 'e', lyric: 'a', m: 5 }, { pitch: 'G4', type: 'q', lyric: 'chick', m: 5 }, { pitch: 'G4', type: 'q', lyric: 'chick', m: 5 }, { pitch: 'G4', type: 'q', lyric: 'here,', m: 5 },
+                { pitch: 'D4', type: 'e', lyric: 'And', m: 6 }, { pitch: 'D4', type: 'e', lyric: 'a', m: 6 }, { pitch: 'G4', type: 'q', lyric: 'chick', m: 6 }, { pitch: 'G4', type: 'q', lyric: 'chick', m: 6 }, { pitch: 'G4', type: 'q', lyric: 'there,', m: 6 },
+                { pitch: 'B4', type: 'q', lyric: 'E', m: 7 }, { pitch: 'B4', type: 'q', lyric: 'I', m: 7 }, { pitch: 'A4', type: 'q', lyric: 'E', m: 7 }, { pitch: 'A4', type: 'q', lyric: 'I', m: 7 },
+                { pitch: 'G4', type: 'dh', lyric: 'O.', m: 8 }, { pitch: 'Rest', type: 'qr', lyric: '', m: 8 }
+                ]
+            },
+            {
+                id: 6, title: 'When the Saints', belt: 'Blue', beatsPerMeasure: 4,
+                notes: [
+                { pitch: 'Rest', type: 'hr', lyric: '', m: 1 }, { pitch: 'G4', type: 'q', lyric: 'Oh', m: 1 }, { pitch: 'B4', type: 'q', lyric: 'when', m: 1 },
+                { pitch: 'C5', type: 'q', lyric: 'the', m: 2 }, { pitch: 'D5', type: 'dh', lyric: 'saints,', m: 2 },
+                { pitch: 'Rest', type: 'hr', lyric: '', m: 3 }, { pitch: 'G4', type: 'q', lyric: 'Oh', m: 3 }, { pitch: 'B4', type: 'q', lyric: 'when', m: 3 },
+                { pitch: 'C5', type: 'q', lyric: 'the', m: 4 }, { pitch: 'D5', type: 'dh', lyric: 'saints,', m: 4 },
+                { pitch: 'Rest', type: 'hr', lyric: '', m: 5 }, { pitch: 'G4', type: 'q', lyric: 'Oh', m: 5 }, { pitch: 'B4', type: 'q', lyric: 'when', m: 5 },
+                { pitch: 'C5', type: 'q', lyric: 'the', m: 6 }, { pitch: 'D5', type: 'h', lyric: 'saints', m: 6 }, { pitch: 'B4', type: 'q', lyric: 'go', m: 6 },
+                { pitch: 'G4', type: 'h', lyric: 'mar-', m: 7 }, { pitch: 'B4', type: 'q', lyric: 'ching', m: 7 }, { pitch: 'A4', type: 'q', lyric: 'in,', m: 7 },
+                { pitch: 'A4', type: 'w', lyric: '', m: 8 }
+                ]
+            },
+            {
+                id: 7, title: 'Twinkle Twinkle', belt: 'Red', beatsPerMeasure: 4,
+                notes: [
+                { pitch: 'D4', type: 'q', lyric: 'Twin-', m: 1 }, { pitch: 'D4', type: 'q', lyric: 'kle', m: 1 }, { pitch: 'A4', type: 'q', lyric: 'twin-', m: 1 }, { pitch: 'A4', type: 'q', lyric: 'kle', m: 1 },
+                { pitch: 'B4', type: 'q', lyric: 'lit-', m: 2 }, { pitch: 'B4', type: 'q', lyric: 'tle', m: 2 }, { pitch: 'A4', type: 'h', lyric: 'star,', m: 2 },
+                { pitch: 'G4', type: 'q', lyric: 'How', m: 3 }, { pitch: 'G4', type: 'q', lyric: 'I', m: 3 }, { pitch: 'F#4', type: 'q', lyric: 'won-', m: 3 }, { pitch: 'F#4', type: 'q', lyric: 'der', m: 3 },
+                { pitch: 'E4', type: 'q', lyric: 'what', m: 4 }, { pitch: 'E4', type: 'q', lyric: 'you', m: 4 }, { pitch: 'D4', type: 'h', lyric: 'are.', m: 4 }
+                ]
+            },
+            {
+                id: 8, title: 'Amazing Grace', belt: 'Brown', beatsPerMeasure: 3,
+                notes: [
+                { pitch: 'Rest', type: 'hr', lyric: '', m: 1 }, { pitch: 'D4', type: 'q', lyric: 'A-', m: 1 },
+                { pitch: 'G4', type: 'h', lyric: 'maz-', m: 2 }, { pitch: 'B4', type: 'e', lyric: 'ing', m: 2 }, { pitch: 'G4', type: 'e', lyric: '-', m: 2 },
+                { pitch: 'B4', type: 'h', lyric: 'grace,', m: 3 }, { pitch: 'A4', type: 'q', lyric: 'how', m: 3 },
+                { pitch: 'G4', type: 'h', lyric: 'sweet', m: 4 }, { pitch: 'E4', type: 'q', lyric: 'the', m: 4 },
+                { pitch: 'D4', type: 'h', lyric: 'sound.', m: 5 }, { pitch: 'D4', type: 'q', lyric: 'That', m: 5 },
+                { pitch: 'G4', type: 'h', lyric: 'saved', m: 6 }, { pitch: 'B4', type: 'e', lyric: 'a', m: 6 }, { pitch: 'G4', type: 'e', lyric: '-', m: 6 },
+                { pitch: 'B4', type: 'h', lyric: 'wretch', m: 7 }, { pitch: 'A4', type: 'e', lyric: 'like', m: 7 }, { pitch: 'B4', type: 'e', lyric: '-', m: 7 },
+                { pitch: 'D5', type: 'dh', lyric: 'me.', m: 8 }
+                ]
+            },
+            {
+                id: 9, title: 'Ode to Joy', belt: 'Black', beatsPerMeasure: 4,
+                notes: [
+                { pitch: 'B4', type: 'q', lyric: 'Joy-', m: 1 }, { pitch: 'B4', type: 'q', lyric: 'ful,', m: 1 }, { pitch: 'C5', type: 'q', lyric: 'joy-', m: 1 }, { pitch: 'D5', type: 'q', lyric: 'ful', m: 1 },
+                { pitch: 'D5', type: 'q', lyric: 'we', m: 2 }, { pitch: 'C5', type: 'q', lyric: 'a-', m: 2 }, { pitch: 'B4', type: 'q', lyric: 'dore', m: 2 }, { pitch: 'A4', type: 'q', lyric: 'Thee,', m: 2 },
+                { pitch: 'G4', type: 'q', lyric: 'God', m: 3 }, { pitch: 'G4', type: 'q', lyric: 'of', m: 3 }, { pitch: 'A4', type: 'q', lyric: 'glo-', m: 3 }, { pitch: 'B4', type: 'q', lyric: 'ry,', m: 3 },
+                { pitch: 'B4', type: 'dq', lyric: 'Lord', m: 4 }, { pitch: 'A4', type: 'e', lyric: 'of', m: 4 }, { pitch: 'A4', type: 'h', lyric: 'love!', m: 4 },
+                { pitch: 'B4', type: 'q', lyric: 'Hearts', m: 5 }, { pitch: 'B4', type: 'q', lyric: 'un-', m: 5 }, { pitch: 'C5', type: 'q', lyric: 'fold', m: 5 }, { pitch: 'D5', type: 'q', lyric: 'like', m: 5 },
+                { pitch: 'D5', type: 'q', lyric: 'flow\'rs', m: 6 }, { pitch: 'C5', type: 'q', lyric: 'be-', m: 6 }, { pitch: 'B4', type: 'q', lyric: 'fore', m: 6 }, { pitch: 'A4', type: 'q', lyric: 'Thee,', m: 6 },
+                { pitch: 'G4', type: 'q', lyric: 'Open-', m: 7 }, { pitch: 'G4', type: 'q', lyric: 'ing', m: 7 }, { pitch: 'A4', type: 'q', lyric: 'to', m: 7 }, { pitch: 'B4', type: 'q', lyric: 'the', m: 7 },
+                { pitch: 'A4', type: 'dq', lyric: 'sun', m: 8 }, { pitch: 'G4', type: 'e', lyric: 'a-', m: 8 }, { pitch: 'G4', type: 'h', lyric: 'bove.', m: 8 }
+                ]
+            }
+        ];
+
+        // --- Application State ---
+        const state = {
+            currentSongId: 5,
+            songNotes: [],
+            isPlaying: false,
+            activeNoteIndex: -1,
+            selectedNoteIndex: null,
+            draggedIndex: null,
+            dragOverIndex: null,
+            showCounts: true,
+            showLyrics: true,
+            showLetters: false,
+            useMetronome: true,
+            tempo: TEMPO_DEFAULT
+        };
+
+        let audioCtxRef = null;
+        let animationFrameId = null;
+
+        // --- Logic Engine ---
+        function calculateEastmanCounts(notesArray) {
+            let currentBeat = 1.0;
+            return notesArray.map(note => {
+                const dur = durationMap[note.type];
+                let countStr = "";
+
+                if (note.pitch === 'Rest') {
+                    countStr = `(${Math.floor(currentBeat)})`;
+                } else {
+                    const fraction = currentBeat % 1;
+                    const beatNum = Math.floor(currentBeat);
+
+                    if (fraction === 0) countStr = `${beatNum}`;
+                    else if (fraction === 0.25) countStr = "ti";
+                    else if (fraction === 0.5) countStr = "te";
+                    else if (fraction === 0.75) countStr = "ta";
+                    
+                    if (dur >= 1.5) {
+                        let arr = [countStr];
+                        for(let i = 1; i < Math.floor(dur); i++) {
+                            arr.push(`${beatNum + i}`);
+                        }
+                        countStr = arr.join("-");
+                    }
+                }
+
+                currentBeat += dur;
+                currentBeat = Math.round(currentBeat * 4) / 4;
+                return { ...note, count: countStr };
+            });
+        }
+
+        function fixAllMeasures(notes, beatsPerMeasure = 4) {
+            let maxM = Math.max(...notes.map(n => n.m), 1);
+            let fixed = [];
+
+            for (let m = 1; m <= maxM; m++) {
+                let mNotes = notes.filter(n => n.m === m);
+                let currentBeats = 0;
+                let validMNotes = [];
+
+                // Pass 1: Add existing notes, truncate if overflowing
+                for (let n of mNotes) {
+                    let nBeats = durationMap[n.type];
+                    if (currentBeats + nBeats <= beatsPerMeasure) {
+                        validMNotes.push({...n, m}); 
+                        currentBeats += nBeats;
+                    } else {
+                        let remainder = beatsPerMeasure - currentBeats;
+                        if (remainder > 0) {
+                            let newType = 'q';
+                            if (remainder >= 4) newType = 'w';
+                            else if (remainder >= 3) newType = 'dh';
+                            else if (remainder >= 2) newType = 'h';
+                            else if (remainder >= 1.5) newType = 'dq';
+                            else if (remainder >= 1) newType = 'q';
+                            else if (remainder >= 0.5) newType = 'e';
+                            else newType = 's';
+                            
+                            if (n.pitch === 'Rest') newType += 'r';
+                            validMNotes.push({...n, type: newType, m});
+                            currentBeats += remainder;
+                        }
+                        break; 
+                    }
+                    currentBeats = Math.round(currentBeats * 4) / 4;
+                }
+
+                // Pass 2: Pad missing beats with rests
+                while (currentBeats < beatsPerMeasure) {
+                    let remainder = beatsPerMeasure - currentBeats;
+                    let rType = 'qr';
+                    if (remainder >= 4) rType = 'wr';
+                    else if (remainder >= 3) rType = 'dhr';
+                    else if (remainder >= 2) rType = 'hr';
+                    else if (remainder >= 1.5) rType = 'dqr';
+                    else if (remainder >= 1) rType = 'qr';
+                    else if (remainder >= 0.5) rType = 'er';
+                    else rType = 'sr';
+                    
+                    validMNotes.push({ pitch: 'Rest', type: rType, lyric: '', m });
+                    currentBeats += durationMap[rType];
+                    currentBeats = Math.round(currentBeats * 4) / 4;
+                }
+                fixed.push(...validMNotes);
+            }
+
+            // Pass 3: Reapply Eastman formatting
+            let finalized = [];
+            for (let m = 1; m <= maxM; m++) {
+                finalized.push(...calculateEastmanCounts(fixed.filter(n => n.m === m)));
+            }
+            return finalized;
+        }
+
+        // --- Audio Context & Playback ---
+        function playTone(ctx, freq, time, dur) {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.type = 'sine';
+            osc.frequency.value = freq;
+            
+            gain.gain.setValueAtTime(0, time);
+            gain.gain.linearRampToValueAtTime(0.6, time + 0.03); 
+            gain.gain.setValueAtTime(0.6, time + dur - 0.05);
+            gain.gain.linearRampToValueAtTime(0, time + dur);
+            
+            osc.start(time);
+            osc.stop(time + dur);
+        }
+
+        const appAPI = {
+            loadSong: (id) => {
+                appAPI.stopSong();
+                state.selectedNoteIndex = null;
+                state.currentSongId = id;
+                const newSong = SONG_LIBRARY.find(s => s.id === id);
+                state.songNotes = fixAllMeasures(newSong.notes, newSong.beatsPerMeasure);
+                render();
+            },
+
+            stopSong: () => {
+                if (audioCtxRef) {
+                    audioCtxRef.close().catch(e => console.error(e));
+                    audioCtxRef = null;
+                }
+                if (animationFrameId) cancelAnimationFrame(animationFrameId);
+                state.isPlaying = false;
+                state.activeNoteIndex = -1;
+                render();
+            },
+
+            playSong: () => {
+                appAPI.stopSong();
+                state.selectedNoteIndex = null;
+                render();
+
+                setTimeout(() => {
+                    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                    audioCtxRef = ctx;
+                    state.isPlaying = true;
+                    render(); // Render play button state
+
+                    const currentSong = SONG_LIBRARY.find(s => s.id === state.currentSongId);
+                    const beatDuration = 60 / state.tempo;
+                    let time = ctx.currentTime + 0.5; 
+                    const schedule = [];
+
+                    const totalMeasures = Math.max(...state.songNotes.map(n => n.m), 1);
+
+                    if (state.useMetronome) {
+                        for (let m = 0; m < totalMeasures; m++) {
+                            for (let b = 0; b < currentSong.beatsPerMeasure; b++) {
+                                const osc = ctx.createOscillator();
+                                const gain = ctx.createGain();
+                                osc.connect(gain);
+                                gain.connect(ctx.destination);
+                                osc.type = 'square';
+                                osc.frequency.setValueAtTime(b === 0 ? 1200 : 800, time + (m * currentSong.beatsPerMeasure + b) * beatDuration);
+                                gain.gain.setValueAtTime(0, time + (m * currentSong.beatsPerMeasure + b) * beatDuration);
+                                gain.gain.linearRampToValueAtTime(0.1, time + (m * currentSong.beatsPerMeasure + b) * beatDuration + 0.005);
+                                gain.gain.exponentialRampToValueAtTime(0.001, time + (m * currentSong.beatsPerMeasure + b) * beatDuration + 0.05);
+                                osc.start(time + (m * currentSong.beatsPerMeasure + b) * beatDuration);
+                                osc.stop(time + (m * currentSong.beatsPerMeasure + b) * beatDuration + 0.05);
+                            }
+                        }
+                    }
+
+                    state.songNotes.forEach((note, i) => {
+                        const beats = durationMap[note.type];
+                        const durSecs = beats * beatDuration;
+
+                        if (note.pitch !== 'Rest') {
+                            playTone(ctx, frequencies[note.pitch], time, durSecs);
+                        }
+                        schedule.push({ index: i, time: time, duration: durSecs });
+                        time += durSecs;
+                    });
+
+                    const updateUI = () => {
+                        if (!audioCtxRef || audioCtxRef.state === 'closed') return;
+                        const currTime = audioCtxRef.currentTime;
+                        const active = schedule.find(s => currTime >= s.time && currTime < s.time + s.duration);
+
+                        if (active) {
+                            if (state.activeNoteIndex !== active.index) {
+                                // Efficient DOM update for highlight
+                                const oldHighlight = document.getElementById(`playback-highlight-${state.activeNoteIndex}`);
+                                if(oldHighlight) {
+                                    oldHighlight.classList.remove('opacity-80', 'bg-emerald-300', 'shadow-md', 'ring-4', 'ring-emerald-400', 'z-10');
+                                    oldHighlight.classList.add('opacity-0');
+                                }
+                                state.activeNoteIndex = active.index;
+                                const newHighlight = document.getElementById(`playback-highlight-${state.activeNoteIndex}`);
+                                if(newHighlight) {
+                                    newHighlight.classList.remove('opacity-0');
+                                    newHighlight.classList.add('opacity-80', 'bg-emerald-300', 'shadow-md', 'ring-4', 'ring-emerald-400', 'z-10');
+                                }
+                            }
+                            animationFrameId = requestAnimationFrame(updateUI);
+                        } else if (currTime >= time) {
+                            appAPI.stopSong();
+                        } else {
+                            animationFrameId = requestAnimationFrame(updateUI);
+                        }
+                    };
+                    animationFrameId = requestAnimationFrame(updateUI);
+                }, 50);
+            },
+
+            handleNoteClick: (globalIndex) => {
+                if (state.isPlaying) appAPI.stopSong();
+                state.selectedNoteIndex = globalIndex;
+                const note = state.songNotes[globalIndex];
+                render(); // re-render to show selection and sidebar
+
+                if (note.pitch !== 'Rest') {
+                    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                    playTone(ctx, frequencies[note.pitch], ctx.currentTime, 0.5);
+                    setTimeout(() => ctx.close(), 1000);
+                }
+            },
+
+            editNote: (globalIndex, field, value) => {
+                let newNotes = [...state.songNotes];
+                const note = { ...newNotes[globalIndex] };
+                const currentSong = SONG_LIBRARY.find(s => s.id === state.currentSongId);
+
+                if (field === 'pitch') {
+                    newNotes[globalIndex] = { ...note, pitch: value };
+                    if (value !== 'Rest') {
+                        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                        playTone(ctx, frequencies[value], ctx.currentTime, 0.5);
+                        setTimeout(() => ctx.close(), 1000);
+                    }
+                    state.songNotes = newNotes;
+                } 
+                else if (field === 'lyric') {
+                    newNotes[globalIndex] = { ...note, lyric: value };
+                    state.songNotes = newNotes;
+                }
+                else if (field === 'type' || field === 'toggleRest') {
+                    if (field === 'toggleRest') {
+                        note.pitch = note.pitch === 'Rest' ? 'G4' : 'Rest';
+                        note.type = note.pitch === 'Rest' ? `${note.type.replace('r','')}r` : note.type.replace('r','');
+                    } else {
+                        note.type = value;
+                    }
+                    newNotes[globalIndex] = note;
+                    state.songNotes = fixAllMeasures(newNotes, currentSong.beatsPerMeasure);
+                }
+                render();
+            },
+
+            setToggle: (field, val) => { state[field] = val; render(); },
+            setTempo: (val) => { state.tempo = Number(val); render(); },
+
+            // Drag & Drop
+            dragStart: (e, index) => {
+                state.draggedIndex = index;
+                e.dataTransfer.effectAllowed = 'move';
+                state.selectedNoteIndex = index;
+                // Defer setting opacity to avoid hiding the dragged ghost image
+                setTimeout(() => { render(); }, 0); 
+            },
+            dragOver: (e, index) => {
+                e.preventDefault();
+                const el = document.getElementById(`drop-target-${index}`);
+                if(el) {
+                    el.classList.remove('opacity-0');
+                    el.classList.add('bg-amber-200', 'border-4', 'border-dashed', 'border-amber-500', 'scale-110', 'z-20');
+                }
+            },
+            dragLeave: (e, index) => {
+                const el = document.getElementById(`drop-target-${index}`);
+                if(el) {
+                    el.classList.add('opacity-0');
+                    el.classList.remove('bg-amber-200', 'border-4', 'border-dashed', 'border-amber-500', 'scale-110', 'z-20');
+                }
+            },
+            drop: (e, dropIndex) => {
+                e.preventDefault();
+                if (state.draggedIndex === null || state.draggedIndex === dropIndex) {
+                    state.draggedIndex = null;
+                    render();
+                    return;
+                }
+
+                let newNotes = [...state.songNotes];
+                const [draggedNote] = newNotes.splice(state.draggedIndex, 1);
+                const targetMeasure = state.songNotes[dropIndex].m;
+                draggedNote.m = targetMeasure; 
+                
+                newNotes.splice(dropIndex, 0, draggedNote);
+                const currentSong = SONG_LIBRARY.find(s => s.id === state.currentSongId);
+                state.songNotes = fixAllMeasures(newNotes, currentSong.beatsPerMeasure);
+                state.draggedIndex = null;
+                state.selectedNoteIndex = dropIndex;
+                render();
+            }
+        };
+
+        // Expose to window for inline HTML handlers
+        window.app = appAPI;
+
+        // Keydown for pitch control
+        window.addEventListener('keydown', (e) => {
+            if (document.activeElement.tagName === 'INPUT') return;
+            if (state.selectedNoteIndex === null) return;
+            
+            const note = state.songNotes[state.selectedNoteIndex];
+            if (!note || note.pitch === 'Rest') return;
+
+            if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                const i = PITCHES.indexOf(note.pitch);
+                if (i < PITCHES.length - 1) appAPI.editNote(state.selectedNoteIndex, 'pitch', PITCHES[i+1]);
+            } else if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                const i = PITCHES.indexOf(note.pitch);
+                if (i > 0) appAPI.editNote(state.selectedNoteIndex, 'pitch', PITCHES[i-1]);
+            }
+        });
+
+
+        // --- Render Functions ---
+        
+        function getFingeringHTML(pitch) {
+            const fingering = fingerings[pitch];
+            if (!fingering || pitch === 'Rest') return '';
+
+            const holes = [1, 2, 3, 4, 5, 6, 7].map(hole => `
+                <div class="flex items-center">
+                    <div class="w-[18px] h-[18px] rounded-full border-[3px] border-slate-300 transition-all ${fingering.holes.includes(hole) ? 'bg-slate-800 scale-110' : 'bg-slate-100'}"></div>
+                </div>
+            `).join('');
+
+            return `
+                <div class="flex flex-col items-center w-32 drop-shadow-xl mt-4 scale-105 pointer-events-none">
+                    <div class="w-14 h-12 bg-red-600 border-4 border-red-800 rounded-t-[2rem] relative shadow-inner">
+                        <div class="absolute w-6 h-5 bg-red-950 rounded-md top-3 left-1/2 -translate-x-1/2 shadow-inner"></div>
+                    </div>
+                    <div class="w-14 h-[270px] bg-slate-50 border-x-4 border-slate-300 flex flex-col items-center py-2 gap-3 relative shadow-[inset_0_0_10px_rgba(0,0,0,0.1)]">
+                        <div class="absolute -left-12 top-6 flex flex-col items-center">
+                            <span class="text-sm font-bold mb-1 text-slate-600">Thumb</span>
+                            <div class="w-6 h-6 rounded-full border-4 border-slate-300 transition-all ${fingering.thumb ? 'bg-slate-800 scale-110' : 'bg-white'}"></div>
+                        </div>
+                        ${holes}
+                    </div>
+                    <div class="w-20 h-14 bg-red-600 border-4 border-red-800 rounded-b-2xl relative shadow-inner" style="clip-path: polygon(15% 0, 85% 0, 100% 100%, 0 100%)">
+                        <div class="absolute inset-x-3 bottom-1 h-3 bg-red-900/40 rounded-full blur-sm"></div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function getNoteSVGHTML(note, isBeamed, forceStemDown) {
+            const naturalStemDown = ['B4', 'C5', 'D5'].includes(note.pitch);
+            const isStemDown = isBeamed ? forceStemDown : naturalStemDown;
+            const pitchY = pitchOffsets[note.pitch];
+            const isHollow = ['h', 'dh', 'w'].includes(note.type);
+            const isDotted = note.type.includes('d');
+
+            if (note.pitch === 'Rest') {
+                let restContent = '';
+                if (note.type === 'qr') restContent = `<path d="M -4 -12 L 2 -4 L -4 4 L 0 12 C 0 16, -4 18, -6 14" fill="none" stroke="#334155" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />`;
+                else if (note.type === 'dqr') restContent = `<g><path d="M -4 -12 L 2 -4 L -4 4 L 0 12 C 0 16, -4 18, -6 14" fill="none" stroke="#334155" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" /><circle cx="12" cy="0" r="2.5" fill="#334155" /></g>`;
+                else if (note.type === 'sr') restContent = `<g stroke="#334155" stroke-width="2.5" fill="none" stroke-linecap="round"><line x1="2" y1="-10" x2="-4" y2="16" /><path d="M 2 -10 C -4 -10, -6 -6, 0 -2" /><path d="M 0 -2 C -6 -2, -8 2, -2 6" /></g>`;
+                else if (note.type === 'hr' || note.type === 'dhr') restContent = `<g><rect x="-6" y="-6" width="12" height="6" fill="#334155" />${note.type === 'dhr' ? '<circle cx="12" cy="-3" r="2.5" fill="#334155" />' : ''}</g>`;
+                else if (note.type === 'wr') restContent = `<rect x="-6" y="0" width="12" height="6" fill="#334155" />`;
+                else if (note.type === 'er') restContent = `<path d="M -2 -10 A 3 3 0 1 1 -2 -4 L -6 12" fill="none" stroke="#334155" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />`;
+
+                return `<svg width="24" height="60" class="absolute -translate-x-1/2 left-1/2 overflow-visible pointer-events-none" style="top: ${pitchY}px">${restContent}</svg>`;
+            }
+
+            const hasSingleFlag = !isBeamed && note.type === 'e';
+            const hasDoubleFlag = !isBeamed && note.type === 's';
+
+            let parts = '';
+            if (note.pitch === 'C4') parts += `<line x1="-12" y1="0" x2="12" y2="0" stroke="#1A202C" stroke-width="2" />`;
+            if (note.pitch.includes('#')) parts += `<text x="-20" y="5" font-size="18" font-family="sans-serif" fill="#1A202C" font-weight="bold">♯</text>`;
+            parts += `<ellipse cx="0" cy="0" rx="6.5" ry="4.5" transform="rotate(-20)" fill="${isHollow ? 'white' : '#1A202C'}" stroke="#1A202C" stroke-width="2.5" />`;
+
+            if (!isBeamed && note.type !== 'w') {
+                if (!isStemDown) parts += `<rect x="5.5" y="-35" width="2" height="35" fill="#1A202C" />`;
+                else parts += `<rect x="-7.5" y="0" width="2" height="35" fill="#1A202C" />`;
+            }
+
+            if (hasSingleFlag && !isStemDown) parts += `<path d="M 5.5 -35 C 14 -30, 18 -15, 12 -5 C 15 -15, 11 -25, 7.5 -35" fill="#1A202C" />`;
+            if (hasSingleFlag && isStemDown) parts += `<path d="M -5.5 35 C 3 30, 7 15, 1 5 C 4 15, 0 25, -3.5 35" fill="#1A202C" />`;
+
+            if (hasDoubleFlag && !isStemDown) parts += `<g><path d="M 5.5 -35 C 14 -30, 18 -15, 12 -5 C 15 -15, 11 -25, 7.5 -35" fill="#1A202C" /><path d="M 5.5 -25 C 14 -20, 18 -5, 12 5 C 15 -5, 11 -15, 7.5 -25" fill="#1A202C" /></g>`;
+            if (hasDoubleFlag && isStemDown) parts += `<g><path d="M -5.5 35 C 3 30, 7 15, 1 5 C 4 15, 0 25, -3.5 35" fill="#1A202C" /><path d="M -5.5 25 C 3 20, 7 5, 1 -5 C 4 5, 0 15, -3.5 25" fill="#1A202C" /></g>`;
+
+            if (isDotted) parts += `<circle cx="15" cy="-2" r="2.5" fill="#1A202C" />`;
+
+            return `<svg width="2" height="2" class="absolute -translate-x-1/2 left-1/2 overflow-visible pointer-events-none" style="top: ${pitchY}px">${parts}</svg>`;
+        }
+
+        function renderSidebar() {
+            const currentSong = SONG_LIBRARY.find(s => s.id === state.currentSongId);
+            const selectedNote = state.selectedNoteIndex !== null ? state.songNotes[state.selectedNoteIndex] : null;
+
+            const songOptions = SONG_LIBRARY.map(s => `<option value="${s.id}" ${s.id === state.currentSongId ? 'selected' : ''}>${s.id}. ${s.title} (${s.belt})</option>`).join('');
+
+            let editorPanel = '';
+            if (selectedNote) {
+                const pitchUp = PITCHES.indexOf(selectedNote.pitch) < PITCHES.length - 1 ? `<button onclick="app.editNote(${state.selectedNoteIndex}, 'pitch', '${PITCHES[PITCHES.indexOf(selectedNote.pitch)+1]}')" class="p-2 bg-white rounded-xl shadow-sm hover:bg-indigo-50 border-2 border-indigo-200 active:scale-95 transition-transform"><i data-lucide="chevron-up" class="text-indigo-700"></i></button>` : '';
+                const pitchDown = PITCHES.indexOf(selectedNote.pitch) > 0 ? `<button onclick="app.editNote(${state.selectedNoteIndex}, 'pitch', '${PITCHES[PITCHES.indexOf(selectedNote.pitch)-1]}')" class="p-2 bg-white rounded-xl shadow-sm hover:bg-indigo-50 border-2 border-indigo-200 active:scale-95 transition-transform"><i data-lucide="chevron-down" class="text-indigo-700"></i></button>` : '';
+                
+                const typeButtons = ['s', 'e', 'q', 'dq', 'h', 'dh'].map(dur => {
+                    const targetType = selectedNote.pitch === 'Rest' ? `${dur}r` : dur;
+                    const isActive = selectedNote.type === targetType;
+                    const lbl = dur === 's' ? '1/16' : dur === 'e' ? '1/8' : dur === 'q' ? '1/4' : dur === 'dq' ? 'D. 1/4' : dur === 'h' ? '1/2' : 'D. 1/2';
+                    const activeClass = isActive ? 'bg-emerald-100 border-emerald-400 text-emerald-800' : 'bg-white border-slate-300 hover:bg-slate-100 text-slate-600';
+                    return `<button onclick="app.editNote(${state.selectedNoteIndex}, 'type', '${targetType}')" class="p-2 rounded-xl border-2 font-bold text-[13px] transition-colors ${activeClass}">${lbl}</button>`;
+                }).join('');
+
+                editorPanel = `
+                    <div class="w-full h-full flex flex-col items-center">
+                        <div class="w-full flex justify-between items-center mb-4 bg-indigo-100 p-3 rounded-2xl border-2 border-indigo-200">
+                            <div class="flex flex-col">
+                                <span class="text-sm font-bold text-indigo-800 uppercase flex items-center gap-1"><i data-lucide="settings-2" class="w-4 h-4"></i> Edit Mode</span>
+                                <span class="text-xl font-black text-indigo-900">${selectedNote.pitch !== 'Rest' ? selectedNote.pitch.replace('4','').replace('5','') : 'Rest'}</span>
+                            </div>
+                            ${selectedNote.pitch !== 'Rest' ? `<div class="flex gap-2">${pitchDown}${pitchUp}</div>` : ''}
+                        </div>
+                        ${selectedNote.pitch !== 'Rest' ? getFingeringHTML(selectedNote.pitch) : `<div class="flex-1 flex items-center justify-center text-slate-400 font-bold text-xl py-8">(Rest)</div>`}
+                        
+                        <div class="w-full mt-6 flex flex-col gap-2">
+                            <label class="text-xs font-bold text-slate-500 uppercase flex items-center gap-1"><i data-lucide="type" class="w-3.5 h-3.5"></i> Lyric Text</label>
+                            <input type="text" value="${selectedNote.lyric || ''}" onchange="app.editNote(${state.selectedNoteIndex}, 'lyric', this.value)" placeholder="${selectedNote.pitch !== 'Rest' ? 'word...' : ''}" class="w-full p-3 text-lg font-bold text-slate-800 bg-white border-2 border-slate-300 rounded-xl focus:outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100 transition-all shadow-sm" />
+                        </div>
+
+                        <div class="w-full mt-4 grid grid-cols-6 gap-2">
+                            <button onclick="app.editNote(${state.selectedNoteIndex}, 'toggleRest', null)" class="col-span-6 p-3 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl mb-2 flex items-center justify-center gap-2 transition-colors">
+                                <i data-lucide="scissors" class="w-4 h-4"></i> ${selectedNote.pitch === 'Rest' ? 'Change to Note' : 'Change to Rest'}
+                            </button>
+                            ${typeButtons}
+                        </div>
+                    </div>
+                `;
+            } else {
+                editorPanel = `
+                    <div class="flex-1 flex flex-col items-center justify-center text-center px-4">
+                        <i data-lucide="grip-horizontal" class="w-12 h-12 text-slate-300 mb-4"></i>
+                        <h3 class="text-2xl font-black text-slate-400 mb-2">Smart Editor</h3>
+                        <p class="text-[17px] font-bold text-slate-400/80 leading-snug">
+                            Tap any note to change its pitch, rhythm, or <span class="text-indigo-400">Drag & Drop</span> notes directly to fix their placement!
+                        </p>
+                    </div>
+                `;
+            }
+
+            return `
+                <div class="w-full xl:w-[400px] bg-white p-6 rounded-[2rem] shadow-xl flex flex-col gap-6 shrink-0 border-[6px] border-indigo-200">
+                    <div class="flex flex-col gap-3 mt-2">
+                        <div class="flex flex-col bg-indigo-50 p-4 rounded-2xl border-2 border-indigo-200 shadow-sm">
+                            <label class="text-sm font-bold text-indigo-800 uppercase mb-2 flex items-center gap-2">
+                                <i data-lucide="music" class="w-4 h-4"></i> Song Library
+                            </label>
+                            <select onchange="app.loadSong(Number(this.value))" class="p-3 font-black text-xl text-indigo-950 bg-white border-2 border-indigo-300 rounded-xl outline-none focus:ring-4 focus:ring-indigo-400/50 cursor-pointer shadow-sm transition-all">
+                                ${songOptions}
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="flex justify-center gap-4">
+                        ${!state.isPlaying ? `
+                            <button onclick="app.playSong()" class="flex-1 py-4 bg-emerald-500 hover:bg-emerald-600 active:bg-emerald-700 text-white font-black text-3xl rounded-[1.5rem] shadow-[0_8px_0_rgb(4,120,87)] transform transition active:translate-y-2 active:shadow-none flex items-center justify-center gap-3">
+                                <i data-lucide="play" class="w-8 h-8 fill-current"></i> PLAY
+                            </button>
+                        ` : `
+                            <button onclick="app.stopSong()" class="flex-1 py-4 bg-rose-500 hover:bg-rose-600 active:bg-rose-700 text-white font-black text-3xl rounded-[1.5rem] shadow-[0_8px_0_rgb(190,18,60)] transform transition active:translate-y-2 active:shadow-none flex items-center justify-center gap-3">
+                                <i data-lucide="square" class="w-8 h-8 fill-current"></i> STOP
+                            </button>
+                        `}
+                    </div>
+
+                    <div class="flex-1 bg-slate-50 p-6 rounded-3xl border-4 border-slate-200 flex flex-col items-center shadow-inner relative overflow-y-auto hide-scrollbar transition-colors">
+                        ${editorPanel}
+                    </div>
+
+                    <div class="bg-slate-100 p-4 rounded-3xl flex flex-col gap-3 shadow-inner">
+                        <label class="flex items-center gap-4 p-3 bg-white rounded-2xl shadow-sm border-2 border-slate-200 cursor-pointer hover:bg-sky-50 transition-colors">
+                            <input type="checkbox" ${state.showCounts ? 'checked' : ''} onchange="app.setToggle('showCounts', this.checked)" class="w-6 h-6 text-sky-500 rounded focus:ring-sky-500" />
+                            <span class="text-lg font-bold text-slate-700 flex-1">Eastman Counts</span>
+                        </label>
+                        <label class="flex items-center gap-4 p-3 bg-white rounded-2xl shadow-sm border-2 border-slate-200 cursor-pointer hover:bg-sky-50 transition-colors">
+                            <input type="checkbox" ${state.showLyrics ? 'checked' : ''} onchange="app.setToggle('showLyrics', this.checked)" class="w-6 h-6 text-slate-500 rounded focus:ring-slate-500" />
+                            <span class="text-lg font-bold text-slate-700 flex-1">Lyrics</span>
+                        </label>
+                        <div class="px-2 mt-2">
+                            <div class="flex justify-between text-xs font-extrabold text-slate-500 mb-2 uppercase tracking-wide">
+                                <span>Slower</span><span class="text-slate-800">${state.tempo} BPM</span><span>Faster</span>
+                            </div>
+                            <input type="range" min="50" max="130" value="${state.tempo}" onchange="app.setTempo(this.value)" />
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderSheetMusic() {
+            const currentSong = SONG_LIBRARY.find(s => s.id === state.currentSongId);
+            let noteCounter = 0;
+            const totalMeasures = Math.max(...state.songNotes.map(n => n.m), 1);
+            
+            let measuresHTML = '';
+
+            for (let i = 0; i < totalMeasures; i++) {
+                const measureNotes = state.songNotes.filter(n => n.m === i + 1);
+                
+                let currentPct = 0;
+                const positionedNotes = measureNotes.map(n => {
+                    const globalIndex = noteCounter++;
+                    const widthPct = (durationMap[n.type] / currentSong.beatsPerMeasure) * 100;
+                    const res = { ...n, globalIndex, widthPct, centerPct: currentPct + (widthPct / 2) };
+                    currentPct += widthPct;
+                    return res;
+                });
+
+                let beamGroups = [];
+                let currentGroup = [];
+                let beatAccumulator = 0;
+
+                positionedNotes.forEach((note) => {
+                    const dur = durationMap[note.type];
+                    const isBeammable = ['e', 's'].includes(note.type) && note.pitch !== 'Rest';
+                    if (isBeammable) currentGroup.push(note);
+                    beatAccumulator += dur;
+                    if (!isBeammable || beatAccumulator % 1 === 0 || beatAccumulator >= currentSong.beatsPerMeasure) {
+                        if (currentGroup.length > 1) beamGroups.push([...currentGroup]);
+                        currentGroup = [];
+                    }
+                });
+
+                let beamSVGContent = '';
+                beamGroups.forEach((group) => {
+                    const avgPitchIndex = group.reduce((sum, n) => sum + PITCHES.indexOf(n.pitch), 0) / group.length;
+                    const stemDown = avgPitchIndex >= PITCHES.indexOf('B4');
+                    const extremePitchY = stemDown
+                        ? Math.max(...group.map(n => pitchOffsets[n.pitch]))
+                        : Math.min(...group.map(n => pitchOffsets[n.pitch]));
+                    const beamY = stemDown ? extremePitchY + 35 : extremePitchY - 35;
+                    const secondaryBeamY = stemDown ? beamY - 8 : beamY + 8;
+                    const getX = (pct) => `calc(${pct}% ${stemDown ? '- 6.5px' : '+ 5.5px'})`;
+                    const firstX = getX(group[0].centerPct);
+                    const lastX = getX(group[group.length - 1].centerPct);
+
+                    let elements = '';
+                    group.forEach((n) => {
+                        elements += `<line x1="${getX(n.centerPct)}" y1="${pitchOffsets[n.pitch]}" x2="${getX(n.centerPct)}" y2="${beamY}" stroke="#1A202C" stroke-width="2" />`;
+                    });
+                    elements += `<line x1="${firstX}" y1="${beamY}" x2="${lastX}" y2="${beamY}" stroke="#1A202C" stroke-width="4" />`;
+                    
+                    for (let idx = 0; idx < group.length; idx++) {
+                        if (group[idx].type === 's') {
+                            let startX = getX(group[idx].centerPct);
+                            if (idx < group.length - 1 && group[idx+1].type === 's') {
+                                elements += `<line x1="${startX}" y1="${secondaryBeamY}" x2="${getX(group[idx+1].centerPct)}" y2="${secondaryBeamY}" stroke="#1A202C" stroke-width="4" />`;
+                            } else if (idx > 0 && group[idx-1].type === 's') {
+                                // Handled by previous
+                            } else {
+                                const stubOffset = idx === 0 ? '10px' : '-10px';
+                                elements += `<line x1="${startX}" y1="${secondaryBeamY}" x2="calc(${startX} + ${stubOffset})" y2="${secondaryBeamY}" stroke="#1A202C" stroke-width="4" />`;
+                            }
+                        }
+                    }
+                    beamSVGContent += `<g>${elements}</g>`;
+                });
+
+                const notesHTML = positionedNotes.map(note => {
+                    const globalIndex = note.globalIndex;
+                    const isSelected = state.selectedNoteIndex === globalIndex;
+                    const isDragged = state.draggedIndex === globalIndex;
+                    
+                    const isBeamed = beamGroups.some(g => g.some(n => n.globalIndex === globalIndex));
+                    let groupStemDown = false;
+                    if (isBeamed) {
+                        const group = beamGroups.find(g => g.some(n => n.globalIndex === globalIndex));
+                        const avgPitchIndex = group.reduce((sum, n) => sum + PITCHES.indexOf(n.pitch), 0) / group.length;
+                        groupStemDown = avgPitchIndex >= PITCHES.indexOf('B4');
+                    }
+
+                    const noteSVG = getNoteSVGHTML(note, isBeamed, groupStemDown);
+
+                    const inputHtml = state.showLyrics ? `
+                        <input type="text" value="${note.lyric || ''}" 
+                               onchange="app.editNote(${globalIndex}, 'lyric', this.value)" 
+                               onclick="event.stopPropagation(); app.handleNoteClick(${globalIndex})" 
+                               placeholder="${note.pitch !== 'Rest' ? 'word...' : ''}" 
+                               class="text-[16px] font-extrabold text-slate-800 tracking-tight leading-[1.1] text-center w-[150%] bg-transparent border-none outline-none hover:bg-white/60 focus:bg-white focus:ring-2 focus:ring-indigo-400 rounded cursor-text transition-all placeholder:text-slate-300/50" />
+                    ` : '';
+
+                    const countsHtml = state.showCounts ? `<span class="text-[15px] font-black text-sky-600 leading-[1.1] pointer-events-none">${note.count}</span>` : '';
+                    const lettersHtml = state.showLetters && note.pitch !== 'Rest' ? `<span class="text-[15px] font-black text-rose-600 leading-[1.1] pointer-events-none">${note.pitch.replace('4', '').replace('5','')}</span>` : '';
+
+                    return `
+                        <div draggable="true" 
+                             ondragstart="app.dragStart(event, ${globalIndex})"
+                             ondragover="app.dragOver(event, ${globalIndex})"
+                             ondragleave="app.dragLeave(event, ${globalIndex})"
+                             ondrop="app.drop(event, ${globalIndex})"
+                             onclick="app.handleNoteClick(${globalIndex})"
+                             style="width: ${note.widthPct}%"
+                             class="relative cursor-pointer transition-all duration-150 group flex justify-center rounded-xl hover:bg-indigo-50 ${isDragged ? 'opacity-30' : 'opacity-100'}">
+                            
+                            <div class="absolute top-[16px] h-[86px] w-12 left-1/2 -translate-x-1/2 rounded-xl transition-all duration-75 ${isSelected ? 'bg-indigo-200 border-2 border-indigo-400' : 'opacity-0'}"></div>
+                            
+                            <!-- Drop Target placeholder -->
+                            <div id="drop-target-${globalIndex}" class="absolute top-[16px] h-[86px] w-12 left-1/2 -translate-x-1/2 rounded-xl transition-all duration-75 opacity-0"></div>
+
+                            <!-- Playback Box -->
+                            <div id="playback-highlight-${globalIndex}" class="absolute top-[16px] h-[86px] w-12 left-1/2 -translate-x-1/2 rounded-xl transition-all duration-75 opacity-0"></div>
+
+                            <div class="z-10 w-full h-full relative pointer-events-none">
+                                ${noteSVG}
+                            </div>
+                            <div class="absolute top-[96px] flex flex-col items-center w-full z-30 gap-0.5">
+                                ${inputHtml}
+                                ${countsHtml}
+                                ${lettersHtml}
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+
+                measuresHTML += `
+                    <div class="relative flex w-full h-[160px] select-none">
+                        <div class="absolute inset-x-0 top-[32px] border-t-[2px] border-slate-700/50 pointer-events-none"></div>
+                        <div class="absolute inset-x-0 top-[44px] border-t-[2px] border-slate-700/50 pointer-events-none"></div>
+                        <div class="absolute inset-x-0 top-[56px] border-t-[2px] border-slate-700/50 pointer-events-none"></div>
+                        <div class="absolute inset-x-0 top-[68px] border-t-[2px] border-slate-700/50 pointer-events-none"></div>
+                        <div class="absolute inset-x-0 top-[80px] border-t-[2px] border-slate-700/50 pointer-events-none"></div>
+
+                        <div class="absolute right-0 top-[32px] h-[48px] border-r-[2px] border-slate-700 z-10 pointer-events-none"></div>
+                        ${i % 4 === 0 ? '<div class="absolute left-0 top-[32px] h-[48px] border-l-[2px] border-slate-700 z-10 pointer-events-none"></div>' : ''}
+                        ${i === totalMeasures - 1 ? '<div class="absolute right-1.5 top-[32px] h-[48px] border-r-4 border-slate-700 z-10 pointer-events-none"></div>' : ''}
+
+                        ${i === 0 ? `
+                            <span class="absolute -top-[16px] left-2 text-[70px] leading-none text-slate-800 z-10 pointer-events-none">&#119070;</span>
+                            <div class="absolute left-[52px] top-[32px] flex flex-col font-serif text-2xl font-bold leading-[24px] text-slate-800 z-10 pointer-events-none">
+                                <span>${currentSong.beatsPerMeasure}</span><span>4</span>
+                            </div>
+                        ` : ''}
+
+                        <svg class="absolute inset-0 w-full h-full pointer-events-none z-20 overflow-visible">${beamSVGContent}</svg>
+
+                        <div class="absolute inset-0 flex items-stretch ${i === 0 ? 'pl-[76px]' : ''}">
+                            ${notesHTML}
+                        </div>
+                    </div>
+                `;
+            }
+
+            return `
+                <div class="flex-1 overflow-y-auto bg-white p-6 md:p-10 rounded-[2rem] shadow-xl border-[6px] border-slate-200 relative hide-scrollbar">
+                    <div class="max-w-[1600px] mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-y-16 gap-x-0">
+                        ${measuresHTML}
+                    </div>
+                </div>
+            `;
+        }
+
+        function render() {
+            const root = document.getElementById('root');
+            root.innerHTML = renderSidebar() + renderSheetMusic();
+            
+            // Initialize Lucide icons on newly rendered HTML
+            if(window.lucide) {
+                window.lucide.createIcons();
+            }
+        }
+
+        // --- Initialization ---
+        window.onload = () => {
+            appAPI.loadSong(5); // Load initial song
+        };
+    </script>
+</body>
+</html>
