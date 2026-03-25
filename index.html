@@ -463,9 +463,16 @@
             },
 
             removeMeasure: () => {
-                if (state.selectedNoteIndex === null) return;
-                const targetM = state.songNotes[state.selectedNoteIndex].m;
                 const currentSong = SONG_LIBRARY.find(s => s.id === state.currentSongId);
+                let targetM;
+                if (state.selectedNoteIndex !== null && state.songNotes[state.selectedNoteIndex]) {
+                    targetM = state.songNotes[state.selectedNoteIndex].m;
+                } else {
+                    // Default to removing the very last measure if no note is selected
+                    targetM = Math.max(...state.songNotes.map(n => n.m), 0);
+                }
+
+                if (targetM <= 0) return;
 
                 let newNotes = state.songNotes.filter(n => n.m !== targetM);
                 newNotes = newNotes.map(n => n.m > targetM ? { ...n, m: n.m - 1 } : n);
@@ -833,6 +840,15 @@
                     </div>
 
                     <div class="mt-2 border-t-2 border-indigo-100 pt-4 flex flex-col gap-3 pb-4">
+                        <div class="flex gap-2 w-full">
+                            <button onclick="app.addMeasure()" class="flex-1 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-lg flex items-center justify-center gap-1 shadow-sm transition-colors">
+                                <i data-lucide="plus" class="w-4 h-4"></i> Measure
+                            </button>
+                            <button onclick="app.removeMeasure()" class="flex-1 py-2 bg-slate-200 hover:bg-slate-300 text-rose-700 font-bold rounded-lg flex items-center justify-center gap-1 shadow-sm transition-colors">
+                                <i data-lucide="minus" class="w-4 h-4"></i> Measure
+                            </button>
+                        </div>
+
                         <button onclick="app.exportSong()" class="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg flex items-center justify-center gap-2 shadow-sm transition-colors">
                             <i data-lucide="download" class="w-4 h-4"></i> Save Song to Device
                         </button>
