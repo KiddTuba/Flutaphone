@@ -3,87 +3,27 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Flutophone Smartboard App</title>
+    <title>Recorder Karate Smartboard App</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <style>
-        input[type=range] {
-            -webkit-appearance: none;
-            width: 100%;
-            background: transparent;
-        }
-        input[type=range]::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            height: 20px;
-            width: 20px;
-            border-radius: 50%;
-            background: #6366f1;
-            cursor: pointer;
-            margin-top: -8px;
-        }
-        input[type=range]::-webkit-slider-runnable-track {
-            width: 100%;
-            height: 6px;
-            cursor: pointer;
-            background: #cbd5e1;
-            border-radius: 4px;
-        }
-        .hide-scrollbar::-webkit-scrollbar {
-            display: none;
-        }
-        .hide-scrollbar {
-            -ms-overflow-style: none;
-            scrollbar-width: none;
-        }
+        input[type=range] { -webkit-appearance: none; width: 100%; background: transparent; }
+        input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 20px; width: 20px; border-radius: 50%; background: #6366f1; cursor: pointer; margin-top: -8px; }
+        input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 6px; cursor: pointer; background: #cbd5e1; border-radius: 4px; }
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
         
-        /* Sibelius Keypad Button Styles */
         .keypad-btn {
-            background-color: #312e81; 
-            color: #e0e7ff; 
-            border-radius: 0.5rem;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            border-bottom-width: 4px;
-            border-color: #1e1b4b; 
-            height: 3.5rem;
-            width: 100%;
-            transition-property: all;
-            transition-duration: 75ms;
-            cursor: pointer;
-            position: relative;
+            background-color: #312e81; color: #e0e7ff; border-radius: 0.5rem; display: flex; flex-direction: column; align-items: center; justify-content: center;
+            border-bottom-width: 4px; border-color: #1e1b4b; height: 3.5rem; width: 100%; transition-property: all; transition-duration: 75ms; cursor: pointer; position: relative;
         }
-        .keypad-btn:hover {
-            background-color: #3730a3; 
-        }
-        .keypad-btn:active {
-            border-bottom-width: 0px;
-            transform: translateY(4px);
-        }
-        .keypad-btn.active-note {
-            background-color: #10b981; 
-            border-color: #047857; 
-            color: white;
-        }
-        .keypad-btn.active-note:hover {
-            background-color: #34d399; 
-        }
-        .keypad-action {
-            background-color: #475569; 
-            border-color: #1e293b; 
-        }
-        .keypad-action:hover {
-            background-color: #64748b; 
-        }
-        .shortcut-hint {
-            font-size: 0.55rem;
-            position: absolute;
-            bottom: 2px;
-            right: 4px;
-            opacity: 0.6;
-            font-weight: bold;
-        }
+        .keypad-btn:hover { background-color: #3730a3; }
+        .keypad-btn:active { border-bottom-width: 0px; transform: translateY(4px); }
+        .keypad-btn.active-note { background-color: #10b981; border-color: #047857; color: white; }
+        .keypad-btn.active-note:hover { background-color: #34d399; }
+        .shortcut-hint { font-size: 0.55rem; position: absolute; bottom: 2px; right: 4px; opacity: 0.6; font-weight: bold; }
+        .measure-container { position: relative; }
+        .measure-container:hover { background-color: rgba(99, 102, 241, 0.05); border-radius: 0.5rem; }
     </style>
 </head>
 <body class="bg-slate-100 text-slate-800 font-sans h-screen w-screen overflow-hidden flex flex-col">
@@ -92,8 +32,67 @@
         <!-- Rendered via JS -->
     </div>
 
+    <!-- Firebase Logic -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        
+        let db, auth, user;
+
+        if (Object.keys(firebaseConfig).length > 0) {
+            const app = initializeApp(firebaseConfig);
+            auth = getAuth(app);
+            db = getFirestore(app);
+
+            const initAuth = async () => {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+            };
+
+            initAuth();
+
+            onAuthStateChanged(auth, (u) => {
+                user = u;
+                if (user) {
+                    const songsRef = collection(db, 'artifacts', appId, 'public', 'data', 'songs');
+                    onSnapshot(songsRef, (snapshot) => {
+                        const fbSongs = [];
+                        snapshot.forEach((doc) => fbSongs.push({ id: doc.id, ...doc.data() }));
+                        window.firebaseSongs = fbSongs;
+                        if(window.app) window.app.mergeSongs();
+                    }, (error) => {
+                        console.error("Firestore Error:", error);
+                    });
+                }
+            });
+        }
+
+        window.firebaseAPI = {
+            saveSong: async (songData) => {
+                if (!user || !db) return;
+                try {
+                    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'songs', String(songData.id));
+                    await setDoc(docRef, songData);
+                } catch (e) { console.error("Save Error:", e); }
+            },
+            deleteSong: async (songId) => {
+                if (!user || !db) return;
+                try {
+                    await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'songs', String(songId)));
+                } catch (e) { console.error("Delete Error:", e); }
+            }
+        };
+    </script>
+
+    <!-- App Logic -->
     <script>
-        // --- Constants & Flutophone Data ---
         const TEMPO_DEFAULT = 90;
         const PITCHES = ['C4', 'D4', 'E4', 'F4', 'F#4', 'G4', 'A4', 'B4', 'C5', 'D5'];
 
@@ -129,50 +128,112 @@
             'Rest': { thumb: false, holes: [] }
         };
 
-        const SONG_LIBRARY = [
-            {
-                id: 1, title: 'Hot Cross Buns', belt: 'White', beatsPerMeasure: 4,
-                notes: [
-                { pitch: 'B4', type: 'q', lyric: 'Hot', m: 1 }, { pitch: 'A4', type: 'q', lyric: 'cross', m: 1 }, { pitch: 'G4', type: 'h', lyric: 'buns,', m: 1 },
-                { pitch: 'B4', type: 'q', lyric: 'Hot', m: 2 }, { pitch: 'A4', type: 'q', lyric: 'cross', m: 2 }, { pitch: 'G4', type: 'h', lyric: 'buns,', m: 2 },
+        // RECORDER KARATE CORE SONGS
+        const DEFAULT_SONGS = [
+            { id: 1, title: 'Hot Cross Buns', belt: 'White', beatsPerMeasure: 4, keySignature: 'C', isCustom: false, notes: [
+                { pitch: 'B4', type: 'q', lyric: 'Hot', m: 1 }, { pitch: 'A4', type: 'q', lyric: 'cross', m: 1 }, { pitch: 'G4', type: 'h', lyric: 'buns!', m: 1 },
+                { pitch: 'B4', type: 'q', lyric: 'Hot', m: 2 }, { pitch: 'A4', type: 'q', lyric: 'cross', m: 2 }, { pitch: 'G4', type: 'h', lyric: 'buns!', m: 2 },
                 { pitch: 'G4', type: 'e', lyric: 'One', m: 3 }, { pitch: 'G4', type: 'e', lyric: 'a', m: 3 }, { pitch: 'G4', type: 'e', lyric: 'pen-', m: 3 }, { pitch: 'G4', type: 'e', lyric: 'ny,', m: 3 }, { pitch: 'A4', type: 'e', lyric: 'Two', m: 3 }, { pitch: 'A4', type: 'e', lyric: 'a', m: 3 }, { pitch: 'A4', type: 'e', lyric: 'pen-', m: 3 }, { pitch: 'A4', type: 'e', lyric: 'ny,', m: 3 },
                 { pitch: 'B4', type: 'q', lyric: 'Hot', m: 4 }, { pitch: 'A4', type: 'q', lyric: 'cross', m: 4 }, { pitch: 'G4', type: 'h', lyric: 'buns!', m: 4 }
-                ]
-            },
-            {
-                id: 5, title: 'Old MacDonald', belt: 'Purple', beatsPerMeasure: 4,
-                notes: [
+            ]},
+            { id: 2, title: 'Gently Sleep', belt: 'Yellow', beatsPerMeasure: 4, keySignature: 'C', isCustom: false, notes: [
+                { pitch: 'G4', type: 'q', lyric: 'Gen-', m: 1 }, { pitch: 'A4', type: 'q', lyric: 'tly', m: 1 }, { pitch: 'B4', type: 'h', lyric: 'sleep,', m: 1 },
+                { pitch: 'A4', type: 'q', lyric: 'my', m: 2 }, { pitch: 'G4', type: 'q', lyric: 'sweet', m: 2 }, { pitch: 'A4', type: 'h', lyric: 'child.', m: 2 },
+                { pitch: 'G4', type: 'q', lyric: 'Gen-', m: 3 }, { pitch: 'A4', type: 'q', lyric: 'tly', m: 3 }, { pitch: 'B4', type: 'h', lyric: 'sleep,', m: 3 },
+                { pitch: 'A4', type: 'h', lyric: 'with that', m: 4 }, { pitch: 'G4', type: 'h', lyric: 'smile.', m: 4 },
+            ]},
+            { id: 3, title: 'Merrily We Roll Along', belt: 'Orange', beatsPerMeasure: 4, keySignature: 'C', isCustom: false, notes: [
+                { pitch: 'B4', type: 'q', lyric: 'Mer-', m: 1 }, { pitch: 'A4', type: 'q', lyric: 'ri-', m: 1 }, { pitch: 'G4', type: 'q', lyric: 'ly', m: 1 }, { pitch: 'A4', type: 'q', lyric: 'we', m: 1 },
+                { pitch: 'B4', type: 'q', lyric: 'roll', m: 2 }, { pitch: 'B4', type: 'q', lyric: 'a-', m: 2 }, { pitch: 'B4', type: 'h', lyric: 'long,', m: 2 },
+                { pitch: 'A4', type: 'q', lyric: 'roll', m: 3 }, { pitch: 'A4', type: 'q', lyric: 'a-', m: 3 }, { pitch: 'A4', type: 'h', lyric: 'long,', m: 3 },
+                { pitch: 'B4', type: 'q', lyric: 'roll', m: 4 }, { pitch: 'B4', type: 'q', lyric: 'a-', m: 4 }, { pitch: 'B4', type: 'h', lyric: 'long.', m: 4 },
+                { pitch: 'B4', type: 'q', lyric: 'Mer-', m: 5 }, { pitch: 'A4', type: 'q', lyric: 'ri-', m: 5 }, { pitch: 'G4', type: 'q', lyric: 'ly', m: 5 }, { pitch: 'A4', type: 'q', lyric: 'we', m: 5 },
+                { pitch: 'B4', type: 'q', lyric: 'roll', m: 6 }, { pitch: 'B4', type: 'q', lyric: 'a-', m: 6 }, { pitch: 'B4', type: 'q', lyric: 'long,', m: 6 }, { pitch: 'B4', type: 'q', lyric: 'o\'er', m: 6 },
+                { pitch: 'A4', type: 'q', lyric: 'the', m: 7 }, { pitch: 'A4', type: 'q', lyric: 'deep', m: 7 }, { pitch: 'B4', type: 'q', lyric: 'blue', m: 7 }, { pitch: 'A4', type: 'q', lyric: 'sea.', m: 7 },
+                { pitch: 'G4', type: 'w', lyric: '', m: 8 }
+            ]},
+            { id: 4, title: 'It\'s Raining', belt: 'Green', beatsPerMeasure: 4, keySignature: 'C', isCustom: false, notes: [
+                { pitch: 'G4', type: 'q', lyric: 'It\'s', m: 1 }, { pitch: 'G4', type: 'e', lyric: 'rain-', m: 1 }, { pitch: 'E4', type: 'e', lyric: 'ing,', m: 1 }, { pitch: 'A4', type: 'q', lyric: 'it\'s', m: 1 }, { pitch: 'G4', type: 'e', lyric: 'pour-', m: 1 }, { pitch: 'E4', type: 'e', lyric: 'ing,', m: 1 },
+                { pitch: 'G4', type: 'q', lyric: 'the', m: 2 }, { pitch: 'E4', type: 'q', lyric: 'old', m: 2 }, { pitch: 'A4', type: 'q', lyric: 'man', m: 2 }, { pitch: 'G4', type: 'e', lyric: 'is', m: 2 }, { pitch: 'E4', type: 'e', lyric: 'snor-', m: 2 },
+                { pitch: 'G4', type: 'e', lyric: 'ing.', m: 3 }, { pitch: 'G4', type: 'e', lyric: 'Went', m: 3 }, { pitch: 'E4', type: 'q', lyric: 'to', m: 3 }, { pitch: 'A4', type: 'e', lyric: 'bed', m: 3 }, { pitch: 'A4', type: 'e', lyric: 'and', m: 3 }, { pitch: 'G4', type: 'q', lyric: 'he', m: 3 },
+                { pitch: 'G4', type: 'e', lyric: 'bumped', m: 4 }, { pitch: 'G4', type: 'e', lyric: 'his', m: 4 }, { pitch: 'E4', type: 'e', lyric: 'head', m: 4 }, { pitch: 'E4', type: 'e', lyric: 'and', m: 4 }, { pitch: 'A4', type: 'e', lyric: 'he', m: 4 }, { pitch: 'G4', type: 'e', lyric: 'couldn\'t', m: 4 }, { pitch: 'E4', type: 'q', lyric: 'get up', m: 4 }
+            ]},
+            { id: 5, title: 'Old MacDonald', belt: 'Purple', beatsPerMeasure: 4, keySignature: 'C', isCustom: false, notes: [
                 { pitch: 'G4', type: 'q', lyric: 'Old', m: 1 }, { pitch: 'G4', type: 'q', lyric: 'Mac-', m: 1 }, { pitch: 'G4', type: 'q', lyric: 'Don-', m: 1 }, { pitch: 'D4', type: 'q', lyric: 'ald', m: 1 },
-                { pitch: 'E4', type: 'q', lyric: 'had', m: 2 }, { pitch: 'E4', type: 'q', lyric: 'a', m: 2 }, { pitch: 'D4', type: 'q', lyric: 'farm,', m: 2 }, { pitch: 'Rest', type: 'qr', lyric: '', m: 2 },
+                { pitch: 'E4', type: 'q', lyric: 'had', m: 2 }, { pitch: 'E4', type: 'q', lyric: 'a', m: 2 }, { pitch: 'D4', type: 'h', lyric: 'farm,', m: 2 },
                 { pitch: 'B4', type: 'q', lyric: 'E', m: 3 }, { pitch: 'B4', type: 'q', lyric: 'I', m: 3 }, { pitch: 'A4', type: 'q', lyric: 'E', m: 3 }, { pitch: 'A4', type: 'q', lyric: 'I', m: 3 },
                 { pitch: 'G4', type: 'dh', lyric: 'O.', m: 4 }, { pitch: 'Rest', type: 'qr', lyric: '', m: 4 },
                 { pitch: 'D4', type: 'e', lyric: 'With', m: 5 }, { pitch: 'D4', type: 'e', lyric: 'a', m: 5 }, { pitch: 'G4', type: 'q', lyric: 'chick', m: 5 }, { pitch: 'G4', type: 'q', lyric: 'chick', m: 5 }, { pitch: 'G4', type: 'q', lyric: 'here,', m: 5 },
                 { pitch: 'D4', type: 'e', lyric: 'And', m: 6 }, { pitch: 'D4', type: 'e', lyric: 'a', m: 6 }, { pitch: 'G4', type: 'q', lyric: 'chick', m: 6 }, { pitch: 'G4', type: 'q', lyric: 'chick', m: 6 }, { pitch: 'G4', type: 'q', lyric: 'there,', m: 6 },
                 { pitch: 'B4', type: 'q', lyric: 'E', m: 7 }, { pitch: 'B4', type: 'q', lyric: 'I', m: 7 }, { pitch: 'A4', type: 'q', lyric: 'E', m: 7 }, { pitch: 'A4', type: 'q', lyric: 'I', m: 7 },
                 { pitch: 'G4', type: 'dh', lyric: 'O.', m: 8 }, { pitch: 'Rest', type: 'qr', lyric: '', m: 8 }
-                ]
-            }
+            ]},
+            { id: 6, title: 'When The Saints', belt: 'Blue', beatsPerMeasure: 4, keySignature: 'C', isCustom: false, notes: [
+                { pitch: 'G4', type: 'q', lyric: 'Oh', m: 1 }, { pitch: 'B4', type: 'q', lyric: 'when', m: 1 }, { pitch: 'C5', type: 'q', lyric: 'the', m: 1 }, { pitch: 'D5', type: 'q', lyric: 'saints', m: 1 },
+                { pitch: 'G4', type: 'q', lyric: 'go', m: 2 }, { pitch: 'B4', type: 'q', lyric: 'march-', m: 2 }, { pitch: 'C5', type: 'q', lyric: 'ing', m: 2 }, { pitch: 'D5', type: 'q', lyric: 'in,', m: 2 },
+                { pitch: 'G4', type: 'q', lyric: 'oh', m: 3 }, { pitch: 'B4', type: 'q', lyric: 'when', m: 3 }, { pitch: 'C5', type: 'q', lyric: 'the', m: 3 }, { pitch: 'D5', type: 'h', lyric: 'saints', m: 3 }, { pitch: 'B4', type: 'h', lyric: 'go', m: 4 },
+                { pitch: 'G4', type: 'h', lyric: 'march-', m: 5 }, { pitch: 'B4', type: 'h', lyric: 'ing', m: 5 }, { pitch: 'A4', type: 'w', lyric: 'in.', m: 6 },
+                { pitch: 'B4', type: 'h', lyric: 'Oh', m: 7 }, { pitch: 'B4', type: 'q', lyric: 'I', m: 7 }, { pitch: 'A4', type: 'q', lyric: 'want', m: 7 }, { pitch: 'G4', type: 'h', lyric: 'to', m: 8 }, { pitch: 'G4', type: 'h', lyric: 'be', m: 8 },
+                { pitch: 'B4', type: 'h', lyric: 'in', m: 9 }, { pitch: 'C5', type: 'h', lyric: 'that', m: 9 }, { pitch: 'D5', type: 'w', lyric: 'num-', m: 10 },
+                { pitch: 'D5', type: 'h', lyric: 'ber,', m: 11 }, { pitch: 'C5', type: 'h', lyric: 'when', m: 11 }, { pitch: 'B4', type: 'h', lyric: 'the', m: 12 }, { pitch: 'G4', type: 'h', lyric: 'saints', m: 12 },
+                { pitch: 'A4', type: 'h', lyric: 'march', m: 13 }, { pitch: 'G4', type: 'w', lyric: 'in.', m: 14 }
+            ]},
+            { id: 7, title: 'Twinkle Twinkle', belt: 'Red', beatsPerMeasure: 4, keySignature: 'G', isCustom: false, notes: [
+                { pitch: 'D4', type: 'q', lyric: 'Twin-', m: 1 }, { pitch: 'D4', type: 'q', lyric: 'kle', m: 1 }, { pitch: 'A4', type: 'q', lyric: 'twin-', m: 1 }, { pitch: 'A4', type: 'q', lyric: 'kle', m: 1 },
+                { pitch: 'B4', type: 'q', lyric: 'lit-', m: 2 }, { pitch: 'B4', type: 'q', lyric: 'tle', m: 2 }, { pitch: 'A4', type: 'h', lyric: 'star,', m: 2 },
+                { pitch: 'G4', type: 'q', lyric: 'How', m: 3 }, { pitch: 'G4', type: 'q', lyric: 'I', m: 3 }, { pitch: 'F#4', type: 'q', lyric: 'won-', m: 3 }, { pitch: 'F#4', type: 'q', lyric: 'der', m: 3 },
+                { pitch: 'E4', type: 'q', lyric: 'what', m: 4 }, { pitch: 'E4', type: 'q', lyric: 'you', m: 4 }, { pitch: 'D4', type: 'h', lyric: 'are.', m: 4 },
+                { pitch: 'A4', type: 'q', lyric: 'Up', m: 5 }, { pitch: 'A4', type: 'q', lyric: 'a-', m: 5 }, { pitch: 'G4', type: 'q', lyric: 'bove', m: 5 }, { pitch: 'G4', type: 'q', lyric: 'the', m: 5 },
+                { pitch: 'F#4', type: 'q', lyric: 'world', m: 6 }, { pitch: 'F#4', type: 'q', lyric: 'so', m: 6 }, { pitch: 'E4', type: 'h', lyric: 'high,', m: 6 },
+                { pitch: 'A4', type: 'q', lyric: 'Like', m: 7 }, { pitch: 'A4', type: 'q', lyric: 'a', m: 7 }, { pitch: 'G4', type: 'q', lyric: 'dia-', m: 7 }, { pitch: 'G4', type: 'q', lyric: 'mond', m: 7 },
+                { pitch: 'F#4', type: 'q', lyric: 'in', m: 8 }, { pitch: 'F#4', type: 'q', lyric: 'the', m: 8 }, { pitch: 'E4', type: 'h', lyric: 'sky.', m: 8 },
+                { pitch: 'D4', type: 'q', lyric: 'Twin-', m: 9 }, { pitch: 'D4', type: 'q', lyric: 'kle', m: 9 }, { pitch: 'A4', type: 'q', lyric: 'twin-', m: 9 }, { pitch: 'A4', type: 'q', lyric: 'kle', m: 9 },
+                { pitch: 'B4', type: 'q', lyric: 'lit-', m: 10 }, { pitch: 'B4', type: 'q', lyric: 'tle', m: 10 }, { pitch: 'A4', type: 'h', lyric: 'star,', m: 10 },
+                { pitch: 'G4', type: 'q', lyric: 'How', m: 11 }, { pitch: 'G4', type: 'q', lyric: 'I', m: 11 }, { pitch: 'F#4', type: 'q', lyric: 'won-', m: 11 }, { pitch: 'F#4', type: 'q', lyric: 'der', m: 11 },
+                { pitch: 'E4', type: 'q', lyric: 'what', m: 12 }, { pitch: 'E4', type: 'q', lyric: 'you', m: 12 }, { pitch: 'D4', type: 'h', lyric: 'are.', m: 12 }
+            ]},
+            { id: 8, title: 'Amazing Grace', belt: 'Brown', beatsPerMeasure: 3, keySignature: 'G', isCustom: false, notes: [
+                { pitch: 'D4', type: 'q', lyric: 'A-', m: 1 }, { pitch: 'G4', type: 'h', lyric: 'maz-', m: 2 }, { pitch: 'B4', type: 'e', lyric: 'ing', m: 2 }, { pitch: 'G4', type: 'e', lyric: '', m: 2 },
+                { pitch: 'B4', type: 'h', lyric: 'grace,', m: 3 }, { pitch: 'A4', type: 'q', lyric: 'how', m: 3 }, { pitch: 'G4', type: 'h', lyric: 'sweet', m: 4 }, { pitch: 'E4', type: 'q', lyric: 'the', m: 4 },
+                { pitch: 'D4', type: 'h', lyric: 'sound,', m: 5 }, { pitch: 'D4', type: 'q', lyric: 'that', m: 5 }, { pitch: 'G4', type: 'h', lyric: 'saved', m: 6 }, { pitch: 'B4', type: 'e', lyric: 'a', m: 6 }, { pitch: 'G4', type: 'e', lyric: '', m: 6 },
+                { pitch: 'B4', type: 'h', lyric: 'wretch', m: 7 }, { pitch: 'A4', type: 'e', lyric: 'like', m: 7 }, { pitch: 'B4', type: 'e', lyric: '', m: 7 }, { pitch: 'D5', type: 'dh', lyric: 'me.', m: 8 },
+                { pitch: 'D5', type: 'h', lyric: 'I', m: 9 }, { pitch: 'B4', type: 'q', lyric: 'once', m: 9 }, { pitch: 'D5', type: 'e', lyric: 'was', m: 10 }, { pitch: 'B4', type: 'e', lyric: '', m: 10 }, { pitch: 'G4', type: 'q', lyric: 'lost,', m: 10 }, { pitch: 'D4', type: 'q', lyric: 'but', m: 10 },
+                { pitch: 'E4', type: 'h', lyric: 'now', m: 11 }, { pitch: 'G4', type: 'e', lyric: 'am', m: 11 }, { pitch: 'E4', type: 'e', lyric: '', m: 11 }, { pitch: 'D4', type: 'h', lyric: 'found,', m: 12 }, { pitch: 'D4', type: 'q', lyric: 'was', m: 12 },
+                { pitch: 'G4', type: 'h', lyric: 'blind', m: 13 }, { pitch: 'B4', type: 'e', lyric: 'but', m: 13 }, { pitch: 'G4', type: 'e', lyric: '', m: 13 }, { pitch: 'B4', type: 'h', lyric: 'now', m: 14 }, { pitch: 'A4', type: 'q', lyric: 'I', m: 14 },
+                { pitch: 'G4', type: 'dh', lyric: 'see.', m: 15 }
+            ]},
+            { id: 9, title: 'Ode To Joy', belt: 'Black', beatsPerMeasure: 4, keySignature: 'G', isCustom: false, notes: [
+                { pitch: 'B4', type: 'q', lyric: '', m: 1 }, { pitch: 'B4', type: 'q', lyric: '', m: 1 }, { pitch: 'C5', type: 'q', lyric: '', m: 1 }, { pitch: 'D5', type: 'q', lyric: '', m: 1 },
+                { pitch: 'D5', type: 'q', lyric: '', m: 2 }, { pitch: 'C5', type: 'q', lyric: '', m: 2 }, { pitch: 'B4', type: 'q', lyric: '', m: 2 }, { pitch: 'A4', type: 'q', lyric: '', m: 2 },
+                { pitch: 'G4', type: 'q', lyric: '', m: 3 }, { pitch: 'G4', type: 'q', lyric: '', m: 3 }, { pitch: 'A4', type: 'q', lyric: '', m: 3 }, { pitch: 'B4', type: 'q', lyric: '', m: 3 },
+                { pitch: 'B4', type: 'dq', lyric: '', m: 4 }, { pitch: 'A4', type: 'e', lyric: '', m: 4 }, { pitch: 'A4', type: 'h', lyric: '', m: 4 },
+                { pitch: 'B4', type: 'q', lyric: '', m: 5 }, { pitch: 'B4', type: 'q', lyric: '', m: 5 }, { pitch: 'C5', type: 'q', lyric: '', m: 5 }, { pitch: 'D5', type: 'q', lyric: '', m: 5 },
+                { pitch: 'D5', type: 'q', lyric: '', m: 6 }, { pitch: 'C5', type: 'q', lyric: '', m: 6 }, { pitch: 'B4', type: 'q', lyric: '', m: 6 }, { pitch: 'A4', type: 'q', lyric: '', m: 6 },
+                { pitch: 'G4', type: 'q', lyric: '', m: 7 }, { pitch: 'G4', type: 'q', lyric: '', m: 7 }, { pitch: 'A4', type: 'q', lyric: '', m: 7 }, { pitch: 'B4', type: 'q', lyric: '', m: 7 },
+                { pitch: 'A4', type: 'dq', lyric: '', m: 8 }, { pitch: 'G4', type: 'e', lyric: '', m: 8 }, { pitch: 'G4', type: 'h', lyric: '', m: 8 }
+            ]}
         ];
 
-        // --- Application State ---
+        let SONG_LIBRARY = [...DEFAULT_SONGS];
+        window.firebaseSongs = [];
+
         const state = {
-            appMode: 'song', // 'song', 'training', 'game'
-            currentSongId: 5,
+            appMode: 'song', 
+            currentSongId: 1,
             songNotes: [],
             isPlaying: false,
             activeNoteIndex: -1,
             selectedNoteIndex: null,
-            draggedIndex: null,
-            dragOverIndex: null,
             showCounts: true,
             showLyrics: true,
             showLetters: false,
             useMetronome: true,
             tempo: TEMPO_DEFAULT,
-            referenceFileUrl: null,
-            referenceFileType: null,
-            refZoom: 1,
-            // Game & Training State
+            // Point and Click State
+            currentInputDuration: 'q',
+            inputDotted: false,
+            isRestMode: false,
+            // Game State
             trainingPitch: 'G4',
             gamePool: ['G4', 'A4', 'B4'],
             gameTargetPitch: 'G4',
@@ -182,19 +243,27 @@
         let audioCtxRef = null;
         let animationFrameId = null;
 
-        // --- Logic Engine ---
+        function getPitchFromY(y, keySig) {
+            const offsets = [
+                { pitch: 'D5', y: 44 }, { pitch: 'C5', y: 50 }, { pitch: 'B4', y: 56 },
+                { pitch: 'A4', y: 62 }, { pitch: 'G4', y: 68 }, { pitch: 'F4', y: 74 },
+                { pitch: 'E4', y: 80 }, { pitch: 'D4', y: 86 }, { pitch: 'C4', y: 92 }
+            ];
+            let closest = offsets.reduce((prev, curr) => Math.abs(curr.y - y) < Math.abs(prev.y - y) ? curr : prev);
+            if (keySig === 'G' && closest.pitch === 'F4') return 'F#4';
+            return closest.pitch;
+        }
+
         function calculateEastmanCounts(notesArray) {
             let currentBeat = 1.0;
             return notesArray.map(note => {
                 const dur = durationMap[note.type];
                 let countStr = "";
-
                 if (note.pitch === 'Rest') {
                     countStr = `(${Math.floor(currentBeat)})`;
                 } else {
                     const fraction = currentBeat % 1;
                     const beatNum = Math.floor(currentBeat);
-
                     if (fraction === 0) countStr = `${beatNum}`;
                     else if (fraction === 0.25) countStr = "ti";
                     else if (fraction === 0.5) countStr = "te";
@@ -202,13 +271,10 @@
                     
                     if (dur >= 1.5) {
                         let arr = [countStr];
-                        for(let i = 1; i < Math.floor(dur); i++) {
-                            arr.push(`${beatNum + i}`);
-                        }
+                        for(let i = 1; i < Math.floor(dur); i++) arr.push(`${beatNum + i}`);
                         countStr = arr.join("-");
                     }
                 }
-
                 currentBeat += dur;
                 currentBeat = Math.round(currentBeat * 4) / 4;
                 return { ...note, count: countStr };
@@ -278,62 +344,30 @@
         function playTone(ctx, freq, time, dur) {
             const osc = ctx.createOscillator();
             const gain = ctx.createGain();
-            osc.connect(gain);
-            gain.connect(ctx.destination);
-            osc.type = 'sine';
-            osc.frequency.value = freq;
-            
+            osc.connect(gain); gain.connect(ctx.destination);
+            osc.type = 'sine'; osc.frequency.value = freq;
             gain.gain.setValueAtTime(0, time);
             gain.gain.linearRampToValueAtTime(0.6, time + 0.03); 
             gain.gain.setValueAtTime(0.6, time + dur - 0.05);
             gain.gain.linearRampToValueAtTime(0, time + dur);
-            
-            osc.start(time);
-            osc.stop(time + dur);
+            osc.start(time); osc.stop(time + dur);
         }
 
         const appAPI = {
+            mergeSongs: () => {
+                SONG_LIBRARY = [...DEFAULT_SONGS, ...window.firebaseSongs];
+                if (!SONG_LIBRARY.find(s => s.id === state.currentSongId)) {
+                    state.currentSongId = 1;
+                }
+                render();
+            },
+
             setMode: (mode) => {
-                appAPI.stopSong();
-                state.appMode = mode;
+                appAPI.stopSong(); state.appMode = mode;
                 if(mode === 'game') appAPI.generateGameNote();
                 render();
             },
 
-            // --- Game & Training Actions ---
-            setTrainingPitch: (pitch) => {
-                state.trainingPitch = pitch;
-                const ctx = new (window.AudioContext || window.webkitAudioContext)();
-                playTone(ctx, frequencies[pitch], ctx.currentTime, 0.5);
-                setTimeout(() => ctx.close(), 1000);
-                render();
-            },
-            toggleGamePool: (pitch) => {
-                if(state.gamePool.includes(pitch)) {
-                    state.gamePool = state.gamePool.filter(p => p !== pitch);
-                } else {
-                    state.gamePool.push(pitch);
-                }
-                render();
-            },
-            generateGameNote: () => {
-                if(state.gamePool.length === 0) return;
-                const randomPitch = state.gamePool[Math.floor(Math.random() * state.gamePool.length)];
-                state.gameTargetPitch = randomPitch;
-                state.gameShowAnswer = false;
-                render();
-            },
-            toggleGameAnswer: () => {
-                state.gameShowAnswer = !state.gameShowAnswer;
-                if(state.gameShowAnswer && state.gameTargetPitch !== 'Rest') {
-                    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-                    playTone(ctx, frequencies[state.gameTargetPitch], ctx.currentTime, 0.5);
-                    setTimeout(() => ctx.close(), 1000);
-                }
-                render();
-            },
-
-            // --- Song Editor Actions ---
             loadSong: (id) => {
                 appAPI.stopSong();
                 state.selectedNoteIndex = null;
@@ -343,14 +377,106 @@
                 render();
             },
 
-            stopSong: () => {
-                if (audioCtxRef) {
-                    audioCtxRef.close().catch(e => console.error(e));
-                    audioCtxRef = null;
+            createNewSong: () => {
+                const id = Date.now();
+                const newSong = {
+                    id, title: 'My Custom Song', belt: 'Custom', beatsPerMeasure: 4, keySignature: 'C', isCustom: true,
+                    notes: fixAllMeasures([{pitch: 'Rest', type: 'wr', lyric: '', m: 1}], 4)
+                };
+                if(window.firebaseAPI) window.firebaseAPI.saveSong(newSong);
+                state.currentSongId = id;
+                state.songNotes = newSong.notes;
+                appAPI.mergeSongs(); 
+            },
+
+            deleteCurrentSong: () => {
+                if(confirm("Are you sure you want to delete this custom song?")) {
+                    if(window.firebaseAPI) window.firebaseAPI.deleteSong(state.currentSongId);
+                    state.currentSongId = 1;
+                    appAPI.loadSong(1);
                 }
+            },
+
+            updateSongMeta: (field, val) => {
+                const song = SONG_LIBRARY.find(s => s.id === state.currentSongId);
+                if(!song.isCustom) return; 
+                song[field] = val;
+                if (field === 'beatsPerMeasure' || field === 'keySignature') {
+                    state.songNotes = fixAllMeasures(state.songNotes, song.beatsPerMeasure);
+                }
+                if(window.firebaseAPI) window.firebaseAPI.saveSong({...song, notes: state.songNotes});
+                render();
+            },
+
+            saveCurrentEditsToCloud: () => {
+                const song = SONG_LIBRARY.find(s => s.id === state.currentSongId);
+                if (song && song.isCustom && window.firebaseAPI) {
+                    window.firebaseAPI.saveSong({...song, notes: state.songNotes});
+                }
+            },
+
+            cloneToCustom: () => {
+                const oldSong = SONG_LIBRARY.find(s => s.id === state.currentSongId);
+                const id = Date.now();
+                const newSong = {
+                    id, title: oldSong.title + ' (Copy)', belt: 'Custom', beatsPerMeasure: oldSong.beatsPerMeasure, keySignature: oldSong.keySignature, isCustom: true, notes: [...state.songNotes]
+                };
+                if(window.firebaseAPI) window.firebaseAPI.saveSong(newSong);
+                state.currentSongId = id;
+                appAPI.mergeSongs();
+            },
+
+            setTool: (dur, toggleDot = false, toggleRest = false) => {
+                if (toggleDot) state.inputDotted = !state.inputDotted;
+                else if (toggleRest) state.isRestMode = !state.isRestMode;
+                else state.currentInputDuration = dur;
+
+                // Also immediately apply to selected note if one exists
+                if (state.selectedNoteIndex !== null) {
+                    if (toggleDot) appAPI.editNote(state.selectedNoteIndex, 'toggleDot', null);
+                    else if (toggleRest) appAPI.editNote(state.selectedNoteIndex, 'toggleRest', null);
+                    else appAPI.editNote(state.selectedNoteIndex, 'baseDuration', dur);
+                } else {
+                    render();
+                }
+            },
+
+            handleStaffClick: (e, globalIndex) => {
+                e.stopPropagation();
+                if(state.isPlaying) appAPI.stopSong();
+                
+                const measureEl = e.currentTarget.closest('.measure-container');
+                const y = e.clientY - measureEl.getBoundingClientRect().top;
+                const currentSong = SONG_LIBRARY.find(s => s.id === state.currentSongId);
+                const pitch = getPitchFromY(y, currentSong.keySignature);
+
+                let newNotes = [...state.songNotes];
+                let note = { ...newNotes[globalIndex] };
+
+                note.pitch = state.isRestMode ? 'Rest' : pitch;
+                let t = state.currentInputDuration;
+                if(state.inputDotted && ['q','h','e'].includes(t)) t = 'd' + t;
+                if(state.isRestMode) t = t + 'r';
+                note.type = t;
+
+                newNotes[globalIndex] = note;
+                state.songNotes = fixAllMeasures(newNotes, currentSong.beatsPerMeasure);
+                state.selectedNoteIndex = globalIndex;
+                
+                if(!state.isRestMode) {
+                    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                    playTone(ctx, frequencies[pitch], ctx.currentTime, 0.5);
+                    setTimeout(() => ctx.close(), 1000);
+                }
+
+                appAPI.saveCurrentEditsToCloud();
+                render();
+            },
+
+            stopSong: () => {
+                if (audioCtxRef) { audioCtxRef.close().catch(e => console.error(e)); audioCtxRef = null; }
                 if (animationFrameId) cancelAnimationFrame(animationFrameId);
-                state.isPlaying = false;
-                state.activeNoteIndex = -1;
+                state.isPlaying = false; state.activeNoteIndex = -1;
                 render();
             },
 
@@ -361,42 +487,30 @@
 
                 setTimeout(() => {
                     const ctx = new (window.AudioContext || window.webkitAudioContext)();
-                    audioCtxRef = ctx;
-                    state.isPlaying = true;
-                    render(); 
-
+                    audioCtxRef = ctx; state.isPlaying = true; render(); 
                     const currentSong = SONG_LIBRARY.find(s => s.id === state.currentSongId);
                     const beatDuration = 60 / state.tempo;
                     let time = ctx.currentTime + 0.5; 
                     const schedule = [];
-
                     const totalMeasures = Math.max(...state.songNotes.map(n => n.m), 1);
 
                     if (state.useMetronome) {
                         for (let m = 0; m < totalMeasures; m++) {
                             for (let b = 0; b < currentSong.beatsPerMeasure; b++) {
-                                const osc = ctx.createOscillator();
-                                const gain = ctx.createGain();
-                                osc.connect(gain);
-                                gain.connect(ctx.destination);
-                                osc.type = 'square';
+                                const osc = ctx.createOscillator(); const gain = ctx.createGain();
+                                osc.connect(gain); gain.connect(ctx.destination); osc.type = 'square';
                                 osc.frequency.setValueAtTime(b === 0 ? 1200 : 800, time + (m * currentSong.beatsPerMeasure + b) * beatDuration);
                                 gain.gain.setValueAtTime(0, time + (m * currentSong.beatsPerMeasure + b) * beatDuration);
                                 gain.gain.linearRampToValueAtTime(0.1, time + (m * currentSong.beatsPerMeasure + b) * beatDuration + 0.005);
                                 gain.gain.exponentialRampToValueAtTime(0.001, time + (m * currentSong.beatsPerMeasure + b) * beatDuration + 0.05);
-                                osc.start(time + (m * currentSong.beatsPerMeasure + b) * beatDuration);
-                                osc.stop(time + (m * currentSong.beatsPerMeasure + b) * beatDuration + 0.05);
+                                osc.start(time + (m * currentSong.beatsPerMeasure + b) * beatDuration); osc.stop(time + (m * currentSong.beatsPerMeasure + b) * beatDuration + 0.05);
                             }
                         }
                     }
 
                     state.songNotes.forEach((note, i) => {
-                        const beats = durationMap[note.type];
-                        const durSecs = beats * beatDuration;
-
-                        if (note.pitch !== 'Rest') {
-                            playTone(ctx, frequencies[note.pitch], time, durSecs);
-                        }
+                        const beats = durationMap[note.type]; const durSecs = beats * beatDuration;
+                        if (note.pitch !== 'Rest') playTone(ctx, frequencies[note.pitch], time, durSecs);
                         schedule.push({ index: i, time: time, duration: durSecs });
                         time += durSecs;
                     });
@@ -408,41 +522,22 @@
 
                         if (active) {
                             if (state.activeNoteIndex !== active.index) {
-                                const oldHighlight = document.getElementById(`playback-highlight-${state.activeNoteIndex}`);
-                                if(oldHighlight) {
-                                    oldHighlight.classList.remove('opacity-80', 'bg-emerald-300', 'shadow-md', 'ring-4', 'ring-emerald-400', 'z-10');
-                                    oldHighlight.classList.add('opacity-0');
-                                }
+                                const oldH = document.getElementById(`playback-highlight-${state.activeNoteIndex}`);
+                                if(oldH) oldH.classList.replace('opacity-80', 'opacity-0');
                                 state.activeNoteIndex = active.index;
-                                const newHighlight = document.getElementById(`playback-highlight-${state.activeNoteIndex}`);
-                                if(newHighlight) {
-                                    newHighlight.classList.remove('opacity-0');
-                                    newHighlight.classList.add('opacity-80', 'bg-emerald-300', 'shadow-md', 'ring-4', 'ring-emerald-400', 'z-10');
-                                    newHighlight.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
+                                const newH = document.getElementById(`playback-highlight-${state.activeNoteIndex}`);
+                                if(newH) {
+                                    newH.classList.replace('opacity-0', 'opacity-80');
+                                    newH.classList.add('bg-emerald-300', 'shadow-md', 'ring-4', 'ring-emerald-400', 'z-10');
+                                    newH.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
                                 }
                             }
                             animationFrameId = requestAnimationFrame(updateUI);
-                        } else if (currTime >= time) {
-                            appAPI.stopSong();
-                        } else {
-                            animationFrameId = requestAnimationFrame(updateUI);
-                        }
+                        } else if (currTime >= time) appAPI.stopSong();
+                        else animationFrameId = requestAnimationFrame(updateUI);
                     };
                     animationFrameId = requestAnimationFrame(updateUI);
                 }, 50);
-            },
-
-            handleNoteClick: (globalIndex) => {
-                if (state.isPlaying) appAPI.stopSong();
-                state.selectedNoteIndex = globalIndex;
-                const note = state.songNotes[globalIndex];
-                render(); 
-
-                if (note.pitch !== 'Rest') {
-                    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-                    playTone(ctx, frequencies[note.pitch], ctx.currentTime, 0.5);
-                    setTimeout(() => ctx.close(), 1000);
-                }
             },
 
             editNote: (globalIndex, field, value) => {
@@ -477,7 +572,6 @@
                     const isRest = note.pitch === 'Rest';
                     const hasDot = note.type.includes('d');
                     let base = note.type.replace('d', '').replace('r', '');
-                    
                     if (hasDot) {
                         note.type = base + (isRest ? 'r' : '');
                     } else {
@@ -495,212 +589,111 @@
                     state.songNotes = fixAllMeasures(newNotes, currentSong.beatsPerMeasure);
                 }
                 
+                appAPI.saveCurrentEditsToCloud();
                 render();
             },
 
             addMeasure: () => {
                 const currentSong = SONG_LIBRARY.find(s => s.id === state.currentSongId);
                 const maxM = Math.max(...state.songNotes.map(n => n.m), 0);
-                const restType = currentSong.beatsPerMeasure === 4 ? 'wr' : 'dhr'; 
-                
+                const restType = currentSong.beatsPerMeasure === 4 ? 'wr' : (currentSong.beatsPerMeasure===3?'dhr':'hr'); 
                 state.songNotes.push({ pitch: 'Rest', type: restType, lyric: '', m: maxM + 1 });
                 state.songNotes = fixAllMeasures(state.songNotes, currentSong.beatsPerMeasure);
+                appAPI.saveCurrentEditsToCloud();
                 render();
             },
 
             removeMeasure: () => {
                 const currentSong = SONG_LIBRARY.find(s => s.id === state.currentSongId);
-                let targetM;
-                if (state.selectedNoteIndex !== null && state.songNotes[state.selectedNoteIndex]) {
-                    targetM = state.songNotes[state.selectedNoteIndex].m;
-                } else {
-                    targetM = Math.max(...state.songNotes.map(n => n.m), 0);
-                }
-
+                let targetM = state.selectedNoteIndex !== null && state.songNotes[state.selectedNoteIndex] ? state.songNotes[state.selectedNoteIndex].m : Math.max(...state.songNotes.map(n => n.m), 0);
                 if (targetM <= 0) return;
-
                 let newNotes = state.songNotes.filter(n => n.m !== targetM);
                 newNotes = newNotes.map(n => n.m > targetM ? { ...n, m: n.m - 1 } : n);
-                
                 state.selectedNoteIndex = null;
                 state.songNotes = fixAllMeasures(newNotes, currentSong.beatsPerMeasure);
-                render();
-            },
-
-            exportSong: () => {
-                const currentSong = SONG_LIBRARY.find(s => s.id === state.currentSongId);
-                const exportData = {
-                    title: currentSong.title + " (Custom)",
-                    beatsPerMeasure: currentSong.beatsPerMeasure,
-                    notes: state.songNotes.map(n => ({ pitch: n.pitch, type: n.type, lyric: n.lyric || "", m: n.m }))
-                };
-                const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportData, null, 2));
-                const downloadNode = document.createElement('a');
-                downloadNode.setAttribute("href", dataStr);
-                downloadNode.setAttribute("download", (currentSong.title.replace(/\s+/g, '_')) + "_Custom.json");
-                document.body.appendChild(downloadNode);
-                downloadNode.click();
-                downloadNode.remove();
-            },
-
-            handleFileUpload: (e) => {
-                const file = e.target.files[0];
-                if (!file) return;
-
-                const ext = file.name.split('.').pop().toLowerCase();
-
-                if (ext === 'json') {
-                    const reader = new FileReader();
-                    reader.onload = (evt) => {
-                        try {
-                            const customSong = JSON.parse(evt.target.result);
-                            SONG_LIBRARY.push({
-                                id: SONG_LIBRARY.length + 1,
-                                title: customSong.title || 'Custom Upload',
-                                belt: 'Custom',
-                                beatsPerMeasure: customSong.beatsPerMeasure || 4,
-                                notes: customSong.notes
-                            });
-                            appAPI.loadSong(SONG_LIBRARY.length);
-                        } catch (err) {
-                            alert('Invalid JSON format.');
-                        }
-                    };
-                    reader.readAsText(file);
-                } else {
-                    let type = file.type;
-                    if (!type) {
-                        if (['png', 'jpg', 'jpeg', 'gif', 'bmp', 'tiff', 'tif'].includes(ext)) type = 'image/' + ext;
-                        else if (ext === 'pdf') type = 'application/pdf';
-                    }
-                    
-                    state.referenceFileUrl = URL.createObjectURL(file);
-                    state.referenceFileType = type;
-                    state.refZoom = 1;
-                    
-                    e.target.value = null; 
-                    render();
-                }
-            },
-
-            closeReference: () => {
-                if(state.referenceFileUrl) URL.revokeObjectURL(state.referenceFileUrl);
-                state.referenceFileUrl = null;
-                state.referenceFileType = null;
-                state.refZoom = 1;
+                appAPI.saveCurrentEditsToCloud();
                 render();
             },
             
-            zoomRef: (amount) => {
-                state.refZoom = Math.max(0.5, Math.min(5, state.refZoom + amount));
-                render();
+            // Training & Game
+            setTrainingPitch: (p) => { 
+                state.trainingPitch=p; 
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                playTone(ctx, frequencies[p], ctx.currentTime, 0.5);
+                setTimeout(() => ctx.close(), 1000);
+                render(); 
             },
-
+            generateGameNote: () => { 
+                if(state.gamePool.length === 0) return;
+                state.gameTargetPitch = state.gamePool[Math.floor(Math.random() * state.gamePool.length)]; 
+                state.gameShowAnswer = false; 
+                render(); 
+            },
+            toggleGameAnswer: () => { 
+                state.gameShowAnswer = !state.gameShowAnswer; 
+                if(state.gameShowAnswer && state.gameTargetPitch !== 'Rest') {
+                    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                    playTone(ctx, frequencies[state.gameTargetPitch], ctx.currentTime, 0.5);
+                    setTimeout(() => ctx.close(), 1000);
+                }
+                render(); 
+            },
+            toggleGamePool: (p) => { 
+                if(state.gamePool.includes(p)) state.gamePool = state.gamePool.filter(x=>x!==p); 
+                else state.gamePool.push(p); 
+                render(); 
+            },
             setToggle: (field, val) => { state[field] = val; render(); },
-            setTempo: (val) => { state.tempo = Number(val); render(); },
-
-            dragStart: (e, index) => {
-                state.draggedIndex = index;
-                e.dataTransfer.effectAllowed = 'move';
-                state.selectedNoteIndex = index;
-                setTimeout(() => { render(); }, 0); 
-            },
-            dragOver: (e, index) => {
-                e.preventDefault();
-                const el = document.getElementById(`drop-target-${index}`);
-                if(el) {
-                    el.classList.remove('opacity-0');
-                    el.classList.add('bg-amber-200', 'border-4', 'border-dashed', 'border-amber-500', 'scale-110', 'z-20');
-                }
-            },
-            dragLeave: (e, index) => {
-                const el = document.getElementById(`drop-target-${index}`);
-                if(el) {
-                    el.classList.add('opacity-0');
-                    el.classList.remove('bg-amber-200', 'border-4', 'border-dashed', 'border-amber-500', 'scale-110', 'z-20');
-                }
-            },
-            drop: (e, dropIndex) => {
-                e.preventDefault();
-                if (state.draggedIndex === null || state.draggedIndex === dropIndex) {
-                    state.draggedIndex = null;
-                    render();
-                    return;
-                }
-
-                let newNotes = [...state.songNotes];
-                const [draggedNote] = newNotes.splice(state.draggedIndex, 1);
-                const targetMeasure = state.songNotes[dropIndex].m;
-                draggedNote.m = targetMeasure; 
-                
-                newNotes.splice(dropIndex, 0, draggedNote);
-                const currentSong = SONG_LIBRARY.find(s => s.id === state.currentSongId);
-                state.songNotes = fixAllMeasures(newNotes, currentSong.beatsPerMeasure);
-                state.draggedIndex = null;
-                state.selectedNoteIndex = dropIndex;
-                render();
-            }
+            setTempo: (val) => { state.tempo = Number(val); render(); }
         };
-
         window.app = appAPI;
 
         window.addEventListener('keydown', (e) => {
-            if (state.appMode !== 'song') return; // Only process keybinds in Song Editor mode
             if (document.activeElement.tagName === 'INPUT') return;
-            if (state.selectedNoteIndex === null) return;
-            
-            const note = state.songNotes[state.selectedNoteIndex];
-            
-            // Navigation
-            if (e.key === 'ArrowRight') {
-                e.preventDefault();
-                if (state.selectedNoteIndex < state.songNotes.length - 1) {
-                    appAPI.handleNoteClick(state.selectedNoteIndex + 1);
-                    setTimeout(() => {
-                        const targetEl = document.getElementById(`drop-target-${state.selectedNoteIndex + 1}`);
-                        if(targetEl) targetEl.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
-                    }, 50);
-                }
-            } 
-            else if (e.key === 'ArrowLeft') {
-                e.preventDefault();
-                if (state.selectedNoteIndex > 0) {
-                    appAPI.handleNoteClick(state.selectedNoteIndex - 1);
-                    setTimeout(() => {
-                        const targetEl = document.getElementById(`drop-target-${state.selectedNoteIndex - 1}`);
-                        if(targetEl) targetEl.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
-                    }, 50);
-                }
-            } 
-            // Pitch Modification
-            else if (e.key === 'ArrowUp' && note.pitch !== 'Rest') {
-                e.preventDefault();
-                const i = PITCHES.indexOf(note.pitch);
-                if (i < PITCHES.length - 1) appAPI.editNote(state.selectedNoteIndex, 'pitch', PITCHES[i+1]);
-            } 
-            else if (e.key === 'ArrowDown' && note.pitch !== 'Rest') {
-                e.preventDefault();
-                const i = PITCHES.indexOf(note.pitch);
-                if (i > 0) appAPI.editNote(state.selectedNoteIndex, 'pitch', PITCHES[i-1]);
+            // Numpad Tool Selector logic
+            switch(e.key) {
+                case '6': appAPI.setTool('w'); break;
+                case '5': appAPI.setTool('h'); break;
+                case '4': appAPI.setTool('q'); break;
+                case '3': appAPI.setTool('e'); break;
+                case '2': appAPI.setTool('s'); break;
+                case '.': appAPI.setTool(null, true, false); break;
+                case '0': appAPI.setTool(null, false, true); break;
+                
+                case 'ArrowUp': 
+                    if(state.selectedNoteIndex !== null && state.songNotes[state.selectedNoteIndex].pitch !== 'Rest') {
+                        e.preventDefault();
+                        const p = state.songNotes[state.selectedNoteIndex].pitch;
+                        const i = PITCHES.indexOf(p);
+                        if(i < PITCHES.length - 1) appAPI.editNote(state.selectedNoteIndex, 'pitch', PITCHES[i+1]);
+                    }
+                    break;
+                case 'ArrowDown': 
+                    if(state.selectedNoteIndex !== null && state.songNotes[state.selectedNoteIndex].pitch !== 'Rest') {
+                        e.preventDefault();
+                        const p = state.songNotes[state.selectedNoteIndex].pitch;
+                        const i = PITCHES.indexOf(p);
+                        if(i > 0) appAPI.editNote(state.selectedNoteIndex, 'pitch', PITCHES[i-1]);
+                    }
+                    break;
             }
-            // Rhythm Modification
-            else if (e.key === '2') { e.preventDefault(); appAPI.editNote(state.selectedNoteIndex, 'baseDuration', 's'); }
-            else if (e.key === '3') { e.preventDefault(); appAPI.editNote(state.selectedNoteIndex, 'baseDuration', 'e'); }
-            else if (e.key === '4') { e.preventDefault(); appAPI.editNote(state.selectedNoteIndex, 'baseDuration', 'q'); }
-            else if (e.key === '5') { e.preventDefault(); appAPI.editNote(state.selectedNoteIndex, 'baseDuration', 'h'); }
-            else if (e.key === '6') { e.preventDefault(); appAPI.editNote(state.selectedNoteIndex, 'baseDuration', 'w'); }
-            else if (e.key === '.') { e.preventDefault(); appAPI.editNote(state.selectedNoteIndex, 'toggleDot', null); }
-            else if (e.key === '0') { e.preventDefault(); appAPI.editNote(state.selectedNoteIndex, 'toggleRest', null); }
         });
 
+        // VIEW RENDERERS
+        const ICONS = {
+            quarter: `<svg width="24" height="24" viewBox="0 0 24 24" class="fill-current stroke-current"><ellipse cx="9" cy="18" rx="4" ry="3" transform="rotate(-20 9 18)" stroke="none" /><line x1="12.5" y1="18" x2="12.5" y2="4" stroke-width="2"/></svg>`,
+            half: `<svg width="24" height="24" viewBox="0 0 24 24" class="fill-none stroke-current"><ellipse cx="9" cy="18" rx="4" ry="3" transform="rotate(-20 9 18)" stroke-width="2" /><line x1="12.5" y1="18" x2="12.5" y2="4" stroke-width="2"/></svg>`,
+            whole: `<svg width="24" height="24" viewBox="0 0 24 24" class="fill-none stroke-current"><ellipse cx="12" cy="12" rx="6" ry="4" transform="rotate(-20 12 12)" stroke-width="2" /></svg>`,
+            eighth: `<svg width="24" height="24" viewBox="0 0 24 24" class="fill-current stroke-current"><ellipse cx="9" cy="18" rx="4" ry="3" transform="rotate(-20 9 18)" stroke="none" /><line x1="12.5" y1="18" x2="12.5" y2="4" stroke-width="2"/><path d="M 12.5 4 C 18 6, 18 12, 14 16 C 16 10, 16 6, 12.5 4" stroke="none" /></svg>`,
+            sixteenth: `<svg width="24" height="24" viewBox="0 0 24 24" class="fill-current stroke-current"><ellipse cx="9" cy="18" rx="4" ry="3" transform="rotate(-20 9 18)" stroke="none" /><line x1="12.5" y1="18" x2="12.5" y2="4" stroke-width="2"/><path d="M 12.5 4 C 18 6, 18 12, 14 16 C 16 10, 16 6, 12.5 4" stroke="none" /><path d="M 12.5 10 C 18 12, 18 18, 14 22 C 16 16, 16 12, 12.5 10" stroke="none" /></svg>`,
+            dot: `<svg width="24" height="24" viewBox="0 0 24 24" class="fill-current"><circle cx="12" cy="12" r="3" /></svg>`,
+            rest: `<svg width="24" height="24" viewBox="0 0 24 24" class="fill-none stroke-current"><path d="M 9 6 L 13 10 L 9 14 L 11 18 C 11 20, 8 20, 7 18" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>`
+        };
 
-        // --- Render Functions ---
         function getFingeringHTML(pitch, showLabels = true) {
             const fingering = fingerings[pitch];
             if (!fingering || pitch === 'Rest') return '';
-
             const labels = ['1', '2', '3', '1', '2', '3', 'Pinky'];
-
             const holes = [1, 2, 3, 4, 5, 6, 7].map((hole, index) => `
                 <div class="flex items-center relative w-full justify-center">
                     ${showLabels ? `<span class="absolute right-10 text-[11px] font-extrabold text-slate-500 whitespace-nowrap">${labels[index]}</span>` : ''}
@@ -728,172 +721,165 @@
         }
 
         function getNoteSVGHTML(note, isBeamed, forceStemDown) {
-            const naturalStemDown = ['B4', 'C5', 'D5'].includes(note.pitch);
-            const isStemDown = isBeamed ? forceStemDown : naturalStemDown;
+            const isStemDown = isBeamed ? forceStemDown : ['B4', 'C5', 'D5'].includes(note.pitch);
             const pitchY = pitchOffsets[note.pitch];
             const isHollow = ['h', 'dh', 'w'].includes(note.type);
             const isDotted = note.type.includes('d');
 
             if (note.pitch === 'Rest') {
                 let restContent = '';
-                if (note.type === 'qr') restContent = `<path d="M -4 -12 L 2 -4 L -4 4 L 0 12 C 0 16, -4 18, -6 14" fill="none" stroke="#334155" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />`;
-                else if (note.type === 'dqr') restContent = `<g><path d="M -4 -12 L 2 -4 L -4 4 L 0 12 C 0 16, -4 18, -6 14" fill="none" stroke="#334155" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" /><circle cx="12" cy="0" r="2.5" fill="#334155" /></g>`;
-                else if (note.type === 'sr') restContent = `<g stroke="#334155" stroke-width="2.5" fill="none" stroke-linecap="round"><line x1="2" y1="-10" x2="-4" y2="16" /><path d="M 2 -10 C -4 -10, -6 -6, 0 -2" /><path d="M 0 -2 C -6 -2, -8 2, -2 6" /></g>`;
+                if (note.type === 'qr') restContent = `<path d="M -4 -12 L 2 -4 L -4 4 L 0 12 C 0 16, -4 18, -6 14" fill="none" stroke="#334155" stroke-width="2.5" stroke-linecap="round" />`;
+                else if (note.type === 'dqr') restContent = `<g><path d="M -4 -12 L 2 -4 L -4 4 L 0 12 C 0 16, -4 18, -6 14" fill="none" stroke="#334155" stroke-width="2.5" stroke-linecap="round" /><circle cx="12" cy="0" r="2.5" fill="#334155" /></g>`;
                 else if (note.type === 'hr' || note.type === 'dhr') restContent = `<g><rect x="-6" y="-6" width="12" height="6" fill="#334155" />${note.type === 'dhr' ? '<circle cx="12" cy="-3" r="2.5" fill="#334155" />' : ''}</g>`;
                 else if (note.type === 'wr') restContent = `<rect x="-6" y="0" width="12" height="6" fill="#334155" />`;
-                else if (note.type === 'er') restContent = `<path d="M -2 -10 A 3 3 0 1 1 -2 -4 L -6 12" fill="none" stroke="#334155" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />`;
-
+                else if (note.type === 'er') restContent = `<path d="M -2 -10 A 3 3 0 1 1 -2 -4 L -6 12" fill="none" stroke="#334155" stroke-width="2.5" stroke-linecap="round" />`;
                 return `<svg width="24" height="60" class="absolute -translate-x-1/2 left-1/2 overflow-visible pointer-events-none" style="top: ${pitchY}px">${restContent}</svg>`;
             }
 
-            const hasSingleFlag = !isBeamed && note.type === 'e';
-            const hasDoubleFlag = !isBeamed && note.type === 's';
-
             let parts = '';
             if (note.pitch === 'C4') parts += `<line x1="-12" y1="0" x2="12" y2="0" stroke="#1A202C" stroke-width="2" />`;
-            if (note.pitch.includes('#')) parts += `<text x="-20" y="5" font-size="18" font-family="sans-serif" fill="#1A202C" font-weight="bold">♯</text>`;
+            // Sharp/Natural Symbol
+            const currentSong = SONG_LIBRARY.find(s => s.id === state.currentSongId);
+            if (note.pitch.includes('#') && currentSong && currentSong.keySignature !== 'G') parts += `<text x="-20" y="5" font-size="18" font-family="sans-serif" fill="#1A202C" font-weight="bold">♯</text>`;
+            if (!note.pitch.includes('#') && note.pitch === 'F4' && currentSong && currentSong.keySignature === 'G') parts += `<text x="-20" y="5" font-size="18" font-family="sans-serif" fill="#1A202C" font-weight="bold">♮</text>`;
+
             parts += `<ellipse cx="0" cy="0" rx="6.5" ry="4.5" transform="rotate(-20)" fill="${isHollow ? 'white' : '#1A202C'}" stroke="#1A202C" stroke-width="2.5" />`;
 
-            if (!isBeamed && note.type !== 'w') {
-                if (!isStemDown) parts += `<rect x="5.5" y="-35" width="2" height="35" fill="#1A202C" />`;
-                else parts += `<rect x="-7.5" y="0" width="2" height="35" fill="#1A202C" />`;
-            }
-
-            if (hasSingleFlag && !isStemDown) parts += `<path d="M 5.5 -35 C 14 -30, 18 -15, 12 -5 C 15 -15, 11 -25, 7.5 -35" fill="#1A202C" />`;
-            if (hasSingleFlag && isStemDown) parts += `<path d="M -5.5 35 C 3 30, 7 15, 1 5 C 4 15, 0 25, -3.5 35" fill="#1A202C" />`;
-
-            if (hasDoubleFlag && !isStemDown) parts += `<g><path d="M 5.5 -35 C 14 -30, 18 -15, 12 -5 C 15 -15, 11 -25, 7.5 -35" fill="#1A202C" /><path d="M 5.5 -25 C 14 -20, 18 -5, 12 5 C 15 -5, 11 -15, 7.5 -25" fill="#1A202C" /></g>`;
-            if (hasDoubleFlag && isStemDown) parts += `<g><path d="M -5.5 35 C 3 30, 7 15, 1 5 C 4 15, 0 25, -3.5 35" fill="#1A202C" /><path d="M -5.5 25 C 3 20, 7 5, 1 -5 C 4 5, 0 15, -3.5 25" fill="#1A202C" /></g>`;
-
+            if (!isBeamed && note.type !== 'w') parts += `<rect x="${isStemDown?'-7.5':'5.5'}" y="${isStemDown?'0':'-35'}" width="2" height="35" fill="#1A202C" />`;
+            if (!isBeamed && note.type === 'e') parts += `<path d="${isStemDown ? 'M -5.5 35 C 3 30, 7 15, 1 5 C 4 15, 0 25, -3.5 35' : 'M 5.5 -35 C 14 -30, 18 -15, 12 -5 C 15 -15, 11 -25, 7.5 -35'}" fill="#1A202C" />`;
             if (isDotted) parts += `<circle cx="15" cy="-2" r="2.5" fill="#1A202C" />`;
 
             return `<svg width="2" height="2" class="absolute -translate-x-1/2 left-1/2 overflow-visible pointer-events-none" style="top: ${pitchY}px">${parts}</svg>`;
         }
 
-        const ICONS = {
-            quarter: `<svg width="24" height="24" viewBox="0 0 24 24" class="fill-current stroke-current overflow-visible"><ellipse cx="9" cy="18" rx="4" ry="3" transform="rotate(-20 9 18)" stroke="none" /><line x1="12.5" y1="18" x2="12.5" y2="4" stroke-width="2"/></svg>`,
-            half: `<svg width="24" height="24" viewBox="0 0 24 24" class="fill-none stroke-current overflow-visible"><ellipse cx="9" cy="18" rx="4" ry="3" transform="rotate(-20 9 18)" stroke-width="2" /><line x1="12.5" y1="18" x2="12.5" y2="4" stroke-width="2"/></svg>`,
-            whole: `<svg width="24" height="24" viewBox="0 0 24 24" class="fill-none stroke-current overflow-visible"><ellipse cx="12" cy="12" rx="6" ry="4" transform="rotate(-20 12 12)" stroke-width="2" /></svg>`,
-            eighth: `<svg width="24" height="24" viewBox="0 0 24 24" class="fill-current stroke-current overflow-visible"><ellipse cx="9" cy="18" rx="4" ry="3" transform="rotate(-20 9 18)" stroke="none" /><line x1="12.5" y1="18" x2="12.5" y2="4" stroke-width="2"/><path d="M 12.5 4 C 18 6, 18 12, 14 16 C 16 10, 16 6, 12.5 4" stroke="none" /></svg>`,
-            sixteenth: `<svg width="24" height="24" viewBox="0 0 24 24" class="fill-current stroke-current overflow-visible"><ellipse cx="9" cy="18" rx="4" ry="3" transform="rotate(-20 9 18)" stroke="none" /><line x1="12.5" y1="18" x2="12.5" y2="4" stroke-width="2"/><path d="M 12.5 4 C 18 6, 18 12, 14 16 C 16 10, 16 6, 12.5 4" stroke="none" /><path d="M 12.5 10 C 18 12, 18 18, 14 22 C 16 16, 16 12, 12.5 10" stroke="none" /></svg>`,
-            dot: `<svg width="24" height="24" viewBox="0 0 24 24" class="fill-current"><circle cx="12" cy="12" r="3" /></svg>`,
-            rest: `<svg width="24" height="24" viewBox="0 0 24 24" class="fill-none stroke-current"><path d="M 9 6 L 13 10 L 9 14 L 11 18 C 11 20, 8 20, 7 18" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>`
-        };
-
-        // === VIEW RENDERERS ===
-
         function renderNav() {
             return `
-                <div class="w-full bg-indigo-950 p-3 flex justify-center gap-4 text-white z-50 shrink-0 shadow-md">
-                    <button onclick="app.setMode('song')" class="px-5 py-2 rounded-xl font-bold flex items-center transition-colors ${state.appMode==='song' ? 'bg-indigo-600 text-white' : 'text-indigo-200 hover:bg-indigo-800'}">
-                        <i data-lucide="music" class="w-5 h-5 mr-2"></i> Song Editor
-                    </button>
-                    <button onclick="app.setMode('training')" class="px-5 py-2 rounded-xl font-bold flex items-center transition-colors ${state.appMode==='training' ? 'bg-indigo-600 text-white' : 'text-indigo-200 hover:bg-indigo-800'}">
-                        <i data-lucide="book-open" class="w-5 h-5 mr-2"></i> Fingering Chart
-                    </button>
-                    <button onclick="app.setMode('game')" class="px-5 py-2 rounded-xl font-bold flex items-center transition-colors ${state.appMode==='game' ? 'bg-indigo-600 text-white' : 'text-indigo-200 hover:bg-indigo-800'}">
-                        <i data-lucide="gamepad-2" class="w-5 h-5 mr-2"></i> Guess That Pitch
-                    </button>
+                <div class="w-full bg-indigo-950 p-3 flex justify-center gap-4 text-white z-50 shrink-0 shadow-md relative">
+                    <button onclick="app.setMode('song')" class="px-5 py-2 rounded-xl font-bold flex items-center transition-colors ${state.appMode==='song' ? 'bg-indigo-600' : 'text-indigo-200 hover:bg-indigo-800'}"><i data-lucide="music" class="w-5 h-5 mr-2"></i> Song Editor</button>
+                    <button onclick="app.setMode('training')" class="px-5 py-2 rounded-xl font-bold flex items-center transition-colors ${state.appMode==='training' ? 'bg-indigo-600' : 'text-indigo-200 hover:bg-indigo-800'}"><i data-lucide="book-open" class="w-5 h-5 mr-2"></i> Fingering Chart</button>
+                    <button onclick="app.setMode('game')" class="px-5 py-2 rounded-xl font-bold flex items-center transition-colors ${state.appMode==='game' ? 'bg-indigo-600' : 'text-indigo-200 hover:bg-indigo-800'}"><i data-lucide="gamepad-2" class="w-5 h-5 mr-2"></i> Guess Pitch</button>
                 </div>
             `;
         }
 
-        // --- MODE: SONG EDITOR ---
-        function renderSongMode() {
-            return renderSidebar() + renderSheetMusic();
-        }
-
         function renderSidebar() {
             const currentSong = SONG_LIBRARY.find(s => s.id === state.currentSongId);
-            const selectedNote = state.selectedNoteIndex !== null ? state.songNotes[state.selectedNoteIndex] : null;
-            const songOptions = SONG_LIBRARY.map(s => `<option value="${s.id}" ${s.id === state.currentSongId ? 'selected' : ''}>${s.id}. ${s.title} (${s.belt})</option>`).join('');
+            const songOptions = SONG_LIBRARY.map(s => `<option value="${s.id}" ${s.id === state.currentSongId ? 'selected' : ''}>${s.isCustom ? '⭐ ' : ''}${s.title}</option>`).join('');
 
+            // SMART EDITOR PANEL RESTORATION
             let editorPanel = '';
-            if (selectedNote) {
-                const pitchUp = PITCHES.indexOf(selectedNote.pitch) < PITCHES.length - 1 ? `<button onclick="app.editNote(${state.selectedNoteIndex}, 'pitch', '${PITCHES[PITCHES.indexOf(selectedNote.pitch)+1]}')" class="p-2 bg-indigo-50 rounded-lg shadow-sm border-2 border-indigo-200 active:scale-95 transition-transform"><i data-lucide="chevron-up" class="text-indigo-700 w-5 h-5"></i></button>` : '';
-                const pitchDown = PITCHES.indexOf(selectedNote.pitch) > 0 ? `<button onclick="app.editNote(${state.selectedNoteIndex}, 'pitch', '${PITCHES[PITCHES.indexOf(selectedNote.pitch)-1]}')" class="p-2 bg-indigo-50 rounded-lg shadow-sm border-2 border-indigo-200 active:scale-95 transition-transform"><i data-lucide="chevron-down" class="text-indigo-700 w-5 h-5"></i></button>` : '';
+            if (currentSong.isCustom) {
+                // If a note is selected, bind the keypad state to the selected note. Otherwise bind to currentInputDuration.
+                const hasSelected = state.selectedNoteIndex !== null && state.songNotes[state.selectedNoteIndex];
+                const selectedNote = hasSelected ? state.songNotes[state.selectedNoteIndex] : null;
                 
-                const baseType = selectedNote.type.replace('d', '').replace('r', '');
-                const hasDot = selectedNote.type.includes('d');
-                const isRest = selectedNote.pitch === 'Rest';
+                const baseType = hasSelected ? selectedNote.type.replace('d', '').replace('r', '') : state.currentInputDuration;
+                const hasDot = hasSelected ? selectedNote.type.includes('d') : state.inputDotted;
+                const isRest = hasSelected ? selectedNote.pitch === 'Rest' : state.isRestMode;
 
-                const keypadHTML = `
-                    <div class="grid grid-cols-3 gap-2 w-full relative mt-2">
-                        <button onclick="app.editNote(${state.selectedNoteIndex}, 'baseDuration', 'q')" class="keypad-btn ${baseType === 'q' ? 'active-note' : ''}">${ICONS.quarter}<span class="shortcut-hint">4</span></button>
-                        <button onclick="app.editNote(${state.selectedNoteIndex}, 'baseDuration', 'h')" class="keypad-btn ${baseType === 'h' ? 'active-note' : ''}">${ICONS.half}<span class="shortcut-hint">5</span></button>
-                        <button onclick="app.editNote(${state.selectedNoteIndex}, 'baseDuration', 'w')" class="keypad-btn ${baseType === 'w' ? 'active-note' : ''}">${ICONS.whole}<span class="shortcut-hint">6</span></button>
-                        
-                        <button onclick="app.editNote(${state.selectedNoteIndex}, 'baseDuration', 's')" class="keypad-btn ${baseType === 's' ? 'active-note' : ''}">${ICONS.sixteenth}<span class="shortcut-hint">2</span></button>
-                        <button onclick="app.editNote(${state.selectedNoteIndex}, 'baseDuration', 'e')" class="keypad-btn ${baseType === 'e' ? 'active-note' : ''}">${ICONS.eighth}<span class="shortcut-hint">3</span></button>
-                        <button onclick="app.editNote(${state.selectedNoteIndex}, 'toggleDot', null)" class="keypad-btn ${hasDot ? 'active-note' : ''}">${ICONS.dot}<span class="shortcut-hint">.</span></button>
-                        
-                        <button onclick="app.editNote(${state.selectedNoteIndex}, 'toggleRest', null)" class="keypad-btn ${isRest ? 'active-note' : ''}">${ICONS.rest}<span class="shortcut-hint">0</span></button>
-                        <button onclick="app.addMeasure()" title="Add Measure" class="keypad-btn keypad-action font-bold text-lg">+ M</button>
-                        <button onclick="app.removeMeasure()" title="Delete Measure" class="keypad-btn keypad-action font-bold text-lg text-rose-300 border-rose-900">- M</button>
-                    </div>
-                `;
+                const pitchUp = hasSelected && selectedNote.pitch !== 'Rest' && PITCHES.indexOf(selectedNote.pitch) < PITCHES.length - 1 ? `<button onclick="app.editNote(${state.selectedNoteIndex}, 'pitch', '${PITCHES[PITCHES.indexOf(selectedNote.pitch)+1]}')" class="p-2 bg-indigo-50 rounded-lg shadow-sm border-2 border-indigo-200 active:scale-95 transition-transform"><i data-lucide="chevron-up" class="text-indigo-700 w-5 h-5"></i></button>` : '';
+                const pitchDown = hasSelected && selectedNote.pitch !== 'Rest' && PITCHES.indexOf(selectedNote.pitch) > 0 ? `<button onclick="app.editNote(${state.selectedNoteIndex}, 'pitch', '${PITCHES[PITCHES.indexOf(selectedNote.pitch)-1]}')" class="p-2 bg-indigo-50 rounded-lg shadow-sm border-2 border-indigo-200 active:scale-95 transition-transform"><i data-lucide="chevron-down" class="text-indigo-700 w-5 h-5"></i></button>` : '';
 
                 editorPanel = `
-                    <div class="w-full flex flex-col items-center">
-                        <div class="w-full flex justify-between items-center bg-white p-2 rounded-xl border-2 border-indigo-100 shadow-sm z-10 relative">
-                            <div class="flex flex-col pl-2">
-                                <span class="text-[10px] font-bold text-indigo-500 uppercase tracking-widest flex items-center gap-1">Pitch</span>
-                                <span class="text-2xl font-black text-indigo-900 leading-none mt-1">${selectedNote.pitch !== 'Rest' ? selectedNote.pitch.replace('4','').replace('5','') : 'Rest'}</span>
-                            </div>
-                            ${selectedNote.pitch !== 'Rest' ? `<div class="flex gap-2">${pitchDown}${pitchUp}</div>` : ''}
+                    <div class="bg-slate-50 p-4 rounded-2xl border-2 border-slate-200 shadow-inner flex flex-col items-center mt-4">
+                        <div class="text-xs font-bold text-indigo-800 uppercase mb-3 flex items-center justify-between w-full">
+                            <span>Smart Editor Tool</span>
+                            <span class="text-slate-400 text-[10px] font-medium leading-none ml-2 text-right">Click staff to place.<br/>Numpad maps to tool.</span>
                         </div>
                         
-                        <div class="w-full flex justify-center mt-2 -mb-2 transform scale-75 origin-top">
-                            ${selectedNote.pitch !== 'Rest' ? getFingeringHTML(selectedNote.pitch, true) : `<div class="py-12 font-bold text-slate-400">(Rest)</div>`}
+                        <!-- Keypad Tool Selector -->
+                        <div class="grid grid-cols-3 gap-2 w-full mb-4">
+                            <button onclick="app.setTool('q')" class="keypad-btn ${baseType === 'q' && !isRest ? 'active-note' : ''}">${ICONS.quarter}<span class="shortcut-hint">4</span></button>
+                            <button onclick="app.setTool('h')" class="keypad-btn ${baseType === 'h' && !isRest ? 'active-note' : ''}">${ICONS.half}<span class="shortcut-hint">5</span></button>
+                            <button onclick="app.setTool('w')" class="keypad-btn ${baseType === 'w' && !isRest ? 'active-note' : ''}">${ICONS.whole}<span class="shortcut-hint">6</span></button>
+                            <button onclick="app.setTool('s')" class="keypad-btn ${baseType === 's' && !isRest ? 'active-note' : ''}">${ICONS.sixteenth}<span class="shortcut-hint">2</span></button>
+                            <button onclick="app.setTool('e')" class="keypad-btn ${baseType === 'e' && !isRest ? 'active-note' : ''}">${ICONS.eighth}<span class="shortcut-hint">3</span></button>
+                            
+                            <button onclick="app.setTool(null, true, false)" class="keypad-btn ${hasDot ? 'active-note' : ''}">${ICONS.dot}<span class="shortcut-hint">.</span></button>
+                            <button onclick="app.setTool(null, false, true)" class="keypad-btn col-span-3 h-10 ${isRest ? 'active-note' : ''}">${ICONS.rest}<span class="shortcut-hint ml-2">0</span></button>
                         </div>
 
-                        ${keypadHTML}
-
-                        <div class="w-full mt-2 flex flex-col gap-1">
-                            <input type="text" value="${selectedNote.lyric || ''}" onchange="app.editNote(${state.selectedNoteIndex}, 'lyric', this.value)" placeholder="${selectedNote.pitch !== 'Rest' ? 'Click to type lyric...' : ''}" class="w-full p-2 text-center font-extrabold text-slate-800 bg-white border-2 border-slate-200 rounded-lg focus:outline-none focus:border-indigo-400 transition-all shadow-sm" />
-                        </div>
+                        <!-- Selected Note Details -->
+                        ${hasSelected ? `
+                            <div class="w-full flex justify-between items-center bg-white p-2 rounded-xl border-2 border-indigo-100 shadow-sm z-10 relative">
+                                <div class="flex flex-col pl-2">
+                                    <span class="text-[10px] font-bold text-indigo-500 uppercase tracking-widest flex items-center gap-1">Selected Pitch</span>
+                                    <span class="text-2xl font-black text-indigo-900 leading-none mt-1">${selectedNote.pitch !== 'Rest' ? selectedNote.pitch.replace('4','').replace('5','') : 'Rest'}</span>
+                                </div>
+                                ${selectedNote.pitch !== 'Rest' ? `<div class="flex gap-2">${pitchDown}${pitchUp}</div>` : ''}
+                            </div>
+                            
+                            <div class="w-full flex justify-center mt-2 -mb-4 transform scale-75 origin-top">
+                                ${selectedNote.pitch !== 'Rest' ? getFingeringHTML(selectedNote.pitch, true) : `<div class="py-12 font-bold text-slate-400">(Rest)</div>`}
+                            </div>
+                        ` : `
+                            <div class="w-full py-6 flex flex-col items-center justify-center text-center opacity-50">
+                                <i data-lucide="mouse-pointer-click" class="w-8 h-8 mb-2"></i>
+                                <span class="text-xs font-bold px-4">Click a note on the staff to view its fingering.</span>
+                            </div>
+                        `}
                     </div>
                 `;
             } else {
                 editorPanel = `
-                    <div class="flex-1 flex flex-col items-center justify-center text-center px-4 py-8">
-                        <i data-lucide="arrow-left-right" class="w-12 h-12 text-slate-300 mb-4"></i>
-                        <h3 class="text-xl font-black text-slate-400 mb-2">Smart Editor</h3>
-                        <p class="text-[15px] font-bold text-slate-400/80 leading-snug">
-                            Tap any note to view its <span class="text-indigo-400">Fingering Chart</span> and open the keypad editor!
-                        </p>
+                    <div class="text-center mt-4 py-4 px-4 bg-slate-50 text-slate-400 text-xs font-bold rounded-xl border-2 border-slate-100 border-dashed">
+                        Default song. Click "Copy to Edit" above to unlock the Smart Editor and adjust notes!
                     </div>
                 `;
             }
 
             return `
-                <div class="w-full xl:w-[320px] bg-white p-5 rounded-[2rem] shadow-2xl flex flex-col gap-4 shrink-0 border-[4px] border-indigo-100 h-full overflow-y-auto hide-scrollbar z-40">
+                <div class="w-full xl:w-[320px] bg-white p-5 rounded-[2rem] shadow-2xl flex flex-col gap-4 shrink-0 border-[4px] border-indigo-100 h-full overflow-y-auto hide-scrollbar z-40 relative">
+                    
                     <div class="flex flex-col gap-2">
-                        <label class="text-xs font-bold text-indigo-800 uppercase flex items-center gap-1">
-                            <i data-lucide="music" class="w-4 h-4"></i> Song Library
-                        </label>
-                        <select onchange="app.loadSong(Number(this.value))" class="p-2.5 font-black text-lg text-indigo-950 bg-indigo-50 border-2 border-indigo-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-400 cursor-pointer transition-all">
+                        <label class="text-xs font-bold text-indigo-800 uppercase"><i data-lucide="music" class="w-4 h-4 inline"></i> Song Library</label>
+                        <select onchange="app.loadSong(Number(this.value))" class="p-2 font-black text-lg bg-indigo-50 border-2 rounded-xl text-indigo-900 focus:ring-indigo-400">
                             ${songOptions}
                         </select>
+                        <div class="flex gap-2 mt-1">
+                            <button onclick="app.createNewSong()" class="flex-1 py-1.5 text-xs bg-emerald-100 text-emerald-800 font-bold rounded-lg hover:bg-emerald-200">+ New Song</button>
+                            ${!currentSong.isCustom ? `<button onclick="app.cloneToCustom()" class="flex-1 py-1.5 text-xs bg-sky-100 text-sky-800 font-bold rounded-lg hover:bg-sky-200">Copy to Edit</button>` : `<button onclick="app.deleteCurrentSong()" class="flex-1 py-1.5 text-xs bg-rose-100 text-rose-800 font-bold rounded-lg hover:bg-rose-200">Delete</button>`}
+                        </div>
                     </div>
 
                     <div class="flex justify-center gap-2">
                         ${!state.isPlaying ? `
-                            <button onclick="app.playSong()" class="flex-1 py-3 bg-emerald-500 hover:bg-emerald-600 active:bg-emerald-700 text-white font-black text-2xl rounded-xl shadow-[0_4px_0_rgb(4,120,87)] transform transition active:translate-y-1 active:shadow-none flex items-center justify-center gap-2">
+                            <button onclick="app.playSong()" class="flex-1 py-3 bg-emerald-500 hover:bg-emerald-600 active:bg-emerald-700 text-white font-black text-2xl rounded-xl shadow-[0_4px_0_rgb(4,120,87)] transform active:translate-y-1 active:shadow-none flex justify-center gap-2 transition">
                                 <i data-lucide="play" class="w-6 h-6 fill-current"></i> PLAY
                             </button>
                         ` : `
-                            <button onclick="app.stopSong()" class="flex-1 py-3 bg-rose-500 hover:bg-rose-600 active:bg-rose-700 text-white font-black text-2xl rounded-xl shadow-[0_4px_0_rgb(190,18,60)] transform transition active:translate-y-1 active:shadow-none flex items-center justify-center gap-2">
+                            <button onclick="app.stopSong()" class="flex-1 py-3 bg-rose-500 hover:bg-rose-600 active:bg-rose-700 text-white font-black text-2xl rounded-xl shadow-[0_4px_0_rgb(190,18,60)] transform active:translate-y-1 active:shadow-none flex justify-center gap-2 transition">
                                 <i data-lucide="square" class="w-6 h-6 fill-current"></i> STOP
                             </button>
                         `}
                     </div>
 
-                    <div class="bg-slate-50 p-4 rounded-2xl border-2 border-slate-200 flex flex-col items-center shadow-inner relative transition-colors shrink-0">
-                        ${editorPanel}
+                    ${currentSong.isCustom ? `
+                    <div class="bg-indigo-50 p-3 rounded-xl border-2 border-indigo-100 flex flex-col gap-2">
+                        <label class="text-xs font-bold text-indigo-800">Edit Title:</label>
+                        <input type="text" value="${currentSong.title}" onchange="app.updateSongMeta('title', this.value)" class="p-2 rounded font-bold border-2 border-indigo-200 w-full text-sm">
+                        
+                        <div class="flex gap-2">
+                            <div class="flex-1">
+                                <label class="text-xs font-bold text-indigo-800">Time:</label>
+                                <select onchange="app.updateSongMeta('beatsPerMeasure', Number(this.value))" class="p-1 w-full rounded font-bold border-2 text-sm">
+                                    <option value="4" ${currentSong.beatsPerMeasure===4?'selected':''}>4/4 Time</option>
+                                    <option value="3" ${currentSong.beatsPerMeasure===3?'selected':''}>3/4 Time</option>
+                                    <option value="2" ${currentSong.beatsPerMeasure===2?'selected':''}>2/4 Time</option>
+                                </select>
+                            </div>
+                            <div class="flex-1">
+                                <label class="text-xs font-bold text-indigo-800">Key:</label>
+                                <select onchange="app.updateSongMeta('keySignature', this.value)" class="p-1 w-full rounded font-bold border-2 text-sm">
+                                    <option value="C" ${currentSong.keySignature==='C'?'selected':''}>C Maj</option>
+                                    <option value="G" ${currentSong.keySignature==='G'?'selected':''}>G Maj (F#)</option>
+                                </select>
+                            </div>
+                        </div>
                     </div>
+                    ` : ''}
 
-                    <div class="bg-slate-100 p-3 rounded-2xl flex flex-col gap-2 border-2 border-slate-200 shrink-0">
+                    <div class="bg-slate-50 p-3 rounded-2xl flex flex-col gap-2 border-2 border-slate-200 shrink-0">
                         <label class="flex items-center gap-3 p-2 bg-white rounded-xl shadow-sm cursor-pointer hover:bg-sky-50">
                             <input type="checkbox" ${state.showCounts ? 'checked' : ''} onchange="app.setToggle('showCounts', this.checked)" class="w-5 h-5 accent-sky-500" />
                             <span class="text-sm font-bold text-slate-700 flex-1">Eastman Counts</span>
@@ -903,35 +889,22 @@
                             <span class="text-sm font-bold text-slate-700 flex-1">Lyrics</span>
                         </label>
                         <div class="px-2 mt-1">
-                            <div class="flex justify-between text-[10px] font-extrabold text-slate-500 mb-1 uppercase tracking-wide">
+                            <div class="flex justify-between text-[10px] font-extrabold text-slate-500 mb-1 uppercase">
                                 <span>Slower</span><span class="text-slate-800">${state.tempo} BPM</span><span>Faster</span>
                             </div>
                             <input type="range" min="50" max="130" value="${state.tempo}" onchange="app.setTempo(this.value)" />
                         </div>
                     </div>
 
-                    <div class="mt-2 border-t-2 border-indigo-100 pt-4 flex flex-col gap-3 pb-4">
-                        <div class="flex gap-2 w-full">
-                            <button onclick="app.addMeasure()" class="flex-1 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-lg flex items-center justify-center gap-1 shadow-sm transition-colors">
-                                <i data-lucide="plus" class="w-4 h-4"></i> Measure
-                            </button>
-                            <button onclick="app.removeMeasure()" class="flex-1 py-2 bg-slate-200 hover:bg-slate-300 text-rose-700 font-bold rounded-lg flex items-center justify-center gap-1 shadow-sm transition-colors">
-                                <i data-lucide="minus" class="w-4 h-4"></i> Measure
-                            </button>
-                        </div>
+                    ${editorPanel}
 
-                        <button onclick="app.exportSong()" class="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg flex items-center justify-center gap-2 shadow-sm transition-colors">
-                            <i data-lucide="download" class="w-4 h-4"></i> Save Song to Device
-                        </button>
-                        
-                        <div>
-                            <label class="text-xs font-bold text-indigo-800 uppercase flex items-center gap-1 mb-2">
-                                <i data-lucide="file-up" class="w-4 h-4"></i> Ref Score / Import
-                            </label>
-                            <input type="file" id="scoreUpload" accept=".pdf,.png,.jpg,.jpeg,.tiff,.tif,.bmp,.gif,.json" onchange="app.handleFileUpload(event)" class="text-xs w-full file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:font-bold file:bg-indigo-100 file:text-indigo-800 hover:file:bg-indigo-200 cursor-pointer" />
-                            <p class="text-[10px] text-slate-400 mt-1 font-semibold leading-tight">Upload a PDF/Image to view side-by-side for reference, or upload a .json file to load a saved song.</p>
-                        </div>
+                    ${currentSong.isCustom ? `
+                    <div class="border-t-2 border-indigo-100 pt-4 flex gap-2">
+                        <button onclick="app.addMeasure()" class="flex-1 py-2 bg-slate-200 hover:bg-slate-300 font-bold rounded-lg flex items-center justify-center gap-1 shadow-sm"><i data-lucide="plus" class="w-4 h-4"></i> Measure</button>
+                        <button onclick="app.removeMeasure()" class="flex-1 py-2 bg-slate-200 hover:bg-slate-300 font-bold text-rose-700 rounded-lg flex items-center justify-center gap-1 shadow-sm"><i data-lucide="minus" class="w-4 h-4"></i> Measure</button>
                     </div>
+                    ` : ''}
+
                 </div>
             `;
         }
@@ -944,20 +917,15 @@
 
             for (let i = 0; i < totalMeasures; i++) {
                 const measureNotes = state.songNotes.filter(n => n.m === i + 1);
-                
                 let currentPct = 0;
                 const positionedNotes = measureNotes.map(n => {
                     const globalIndex = noteCounter++;
                     const widthPct = (durationMap[n.type] / currentSong.beatsPerMeasure) * 100;
                     const res = { ...n, globalIndex, widthPct, centerPct: currentPct + (widthPct / 2) };
-                    currentPct += widthPct;
-                    return res;
+                    currentPct += widthPct; return res;
                 });
 
-                let beamGroups = [];
-                let currentGroup = [];
-                let beatAccumulator = 0;
-
+                let beamGroups = [], currentGroup = [], beatAccumulator = 0;
                 positionedNotes.forEach((note) => {
                     const dur = durationMap[note.type];
                     const isBeammable = ['e', 's'].includes(note.type) && note.pitch !== 'Rest';
@@ -971,34 +939,21 @@
 
                 let beamSVGContent = '';
                 beamGroups.forEach((group) => {
-                    const avgPitchIndex = group.reduce((sum, n) => sum + PITCHES.indexOf(n.pitch), 0) / group.length;
-                    const stemDown = avgPitchIndex >= PITCHES.indexOf('B4');
-                    const extremePitchY = stemDown
-                        ? Math.max(...group.map(n => pitchOffsets[n.pitch]))
-                        : Math.min(...group.map(n => pitchOffsets[n.pitch]));
+                    const stemDown = (group.reduce((sum, n) => sum + PITCHES.indexOf(n.pitch), 0) / group.length) >= PITCHES.indexOf('B4');
+                    const extremePitchY = stemDown ? Math.max(...group.map(n => pitchOffsets[n.pitch])) : Math.min(...group.map(n => pitchOffsets[n.pitch]));
                     const beamY = stemDown ? extremePitchY + 35 : extremePitchY - 35;
                     const secondaryBeamY = stemDown ? beamY - 8 : beamY + 8;
                     const getX = (pct) => `calc(${pct}% ${stemDown ? '- 6.5px' : '+ 5.5px'})`;
-                    const firstX = getX(group[0].centerPct);
-                    const lastX = getX(group[group.length - 1].centerPct);
 
                     let elements = '';
-                    group.forEach((n) => {
-                        elements += `<line x1="${getX(n.centerPct)}" y1="${pitchOffsets[n.pitch]}" x2="${getX(n.centerPct)}" y2="${beamY}" stroke="#1A202C" stroke-width="2" />`;
-                    });
-                    elements += `<line x1="${firstX}" y1="${beamY}" x2="${lastX}" y2="${beamY}" stroke="#1A202C" stroke-width="4" />`;
+                    group.forEach((n) => elements += `<line x1="${getX(n.centerPct)}" y1="${pitchOffsets[n.pitch]}" x2="${getX(n.centerPct)}" y2="${beamY}" stroke="#1A202C" stroke-width="2" />`);
+                    elements += `<line x1="${getX(group[0].centerPct)}" y1="${beamY}" x2="${getX(group[group.length - 1].centerPct)}" y2="${beamY}" stroke="#1A202C" stroke-width="4" />`;
                     
                     for (let idx = 0; idx < group.length; idx++) {
                         if (group[idx].type === 's') {
                             let startX = getX(group[idx].centerPct);
-                            if (idx < group.length - 1 && group[idx+1].type === 's') {
-                                elements += `<line x1="${startX}" y1="${secondaryBeamY}" x2="${getX(group[idx+1].centerPct)}" y2="${secondaryBeamY}" stroke="#1A202C" stroke-width="4" />`;
-                            } else if (idx > 0 && group[idx-1].type === 's') {
-                                // Handled by previous
-                            } else {
-                                const stubOffset = idx === 0 ? '10px' : '-10px';
-                                elements += `<line x1="${startX}" y1="${secondaryBeamY}" x2="calc(${startX} + ${stubOffset})" y2="${secondaryBeamY}" stroke="#1A202C" stroke-width="4" />`;
-                            }
+                            if (idx < group.length - 1 && group[idx+1].type === 's') elements += `<line x1="${startX}" y1="${secondaryBeamY}" x2="${getX(group[idx+1].centerPct)}" y2="${secondaryBeamY}" stroke="#1A202C" stroke-width="4" />`;
+                            else if (!(idx > 0 && group[idx-1].type === 's')) elements += `<line x1="${startX}" y1="${secondaryBeamY}" x2="calc(${startX} + ${idx === 0 ? '10px' : '-10px'})" y2="${secondaryBeamY}" stroke="#1A202C" stroke-width="4" />`;
                         }
                     }
                     beamSVGContent += `<g>${elements}</g>`;
@@ -1007,55 +962,26 @@
                 const notesHTML = positionedNotes.map(note => {
                     const globalIndex = note.globalIndex;
                     const isSelected = state.selectedNoteIndex === globalIndex;
-                    const isDragged = state.draggedIndex === globalIndex;
-                    
                     const isBeamed = beamGroups.some(g => g.some(n => n.globalIndex === globalIndex));
                     let groupStemDown = false;
-                    if (isBeamed) {
-                        const group = beamGroups.find(g => g.some(n => n.globalIndex === globalIndex));
-                        const avgPitchIndex = group.reduce((sum, n) => sum + PITCHES.indexOf(n.pitch), 0) / group.length;
-                        groupStemDown = avgPitchIndex >= PITCHES.indexOf('B4');
-                    }
+                    if (isBeamed) groupStemDown = (beamGroups.find(g => g.some(n => n.globalIndex === globalIndex)).reduce((sum, n) => sum + PITCHES.indexOf(n.pitch), 0) / beamGroups.find(g => g.some(n => n.globalIndex === globalIndex)).length) >= PITCHES.indexOf('B4');
 
-                    const noteSVG = getNoteSVGHTML(note, isBeamed, groupStemDown);
-
-                    const inputHtml = state.showLyrics ? `
-                        <input type="text" value="${note.lyric || ''}" 
-                               onchange="app.editNote(${globalIndex}, 'lyric', this.value)" 
-                               onclick="event.stopPropagation(); app.handleNoteClick(${globalIndex})" 
-                               placeholder="${note.pitch !== 'Rest' ? 'word...' : ''}" 
-                               class="text-[14px] font-extrabold text-slate-800 tracking-tight leading-[1.1] text-center w-[150%] bg-transparent border-none outline-none hover:bg-white/60 focus:bg-white focus:ring-2 focus:ring-indigo-400 rounded cursor-text transition-all placeholder:text-slate-300/50" />
-                    ` : '';
-
-                    const countsHtml = state.showCounts ? `<span class="text-[14px] font-black text-sky-600 leading-[1.1] pointer-events-none">${note.count}</span>` : '';
-                    const lettersHtml = state.showLetters && note.pitch !== 'Rest' ? `<span class="text-[14px] font-black text-rose-600 leading-[1.1] pointer-events-none">${note.pitch.replace('4', '').replace('5','')}</span>` : '';
-
+                    const inputHtml = state.showLyrics ? `<input type="text" value="${note.lyric || ''}" onchange="app.editNote(${globalIndex}, 'lyric', this.value)" onclick="event.stopPropagation()" placeholder="${note.pitch !== 'Rest' ? 'word' : ''}" class="text-[14px] font-extrabold text-slate-800 text-center w-[150%] bg-transparent border-none outline-none focus:bg-white rounded z-40 relative" />` : '';
+                    
                     return `
-                        <div draggable="true" 
-                             ondragstart="app.dragStart(event, ${globalIndex})"
-                             ondragover="app.dragOver(event, ${globalIndex})"
-                             ondragleave="app.dragLeave(event, ${globalIndex})"
-                             ondrop="app.drop(event, ${globalIndex})"
-                             onclick="app.handleNoteClick(${globalIndex})"
-                             style="width: ${note.widthPct}%"
-                             class="relative cursor-pointer transition-all duration-150 group flex justify-center rounded-xl hover:bg-indigo-50 ${isDragged ? 'opacity-30' : 'opacity-100'}">
-                            
-                            <div class="absolute top-[16px] h-[86px] w-12 left-1/2 -translate-x-1/2 rounded-xl transition-all duration-75 ${isSelected ? 'bg-indigo-200 border-2 border-indigo-400' : 'opacity-0'}"></div>
-                            
-                            <div id="drop-target-${globalIndex}" class="absolute top-[16px] h-[86px] w-12 left-1/2 -translate-x-1/2 rounded-xl transition-all duration-75 opacity-0"></div>
-                            <div id="playback-highlight-${globalIndex}" class="absolute top-[16px] h-[86px] w-12 left-1/2 -translate-x-1/2 rounded-xl transition-all duration-75 opacity-0"></div>
-
-                            <div class="z-10 w-full h-full relative pointer-events-none">
-                                ${noteSVG}
-                            </div>
-                            <div class="absolute top-[96px] flex flex-col items-center w-full z-30 gap-0.5">
+                        <div onclick="app.handleStaffClick(event, ${globalIndex})" style="width: ${note.widthPct}%" class="relative cursor-pointer group flex justify-center hover:bg-indigo-50/50 measure-container">
+                            <div class="absolute top-[16px] h-[86px] w-12 left-1/2 -translate-x-1/2 rounded-xl transition-all duration-75 ${isSelected ? 'bg-indigo-200 border-2 border-indigo-400' : 'opacity-0'} pointer-events-none"></div>
+                            <div id="playback-highlight-${globalIndex}" class="absolute top-[16px] h-[86px] w-12 left-1/2 -translate-x-1/2 rounded-xl transition-all duration-75 opacity-0 pointer-events-none"></div>
+                            <div class="z-10 w-full h-full relative pointer-events-none">${getNoteSVGHTML(note, isBeamed, groupStemDown)}</div>
+                            <div class="absolute top-[96px] flex flex-col items-center w-full z-30 gap-0.5 pointer-events-auto">
                                 ${inputHtml}
-                                ${countsHtml}
-                                ${lettersHtml}
+                                ${state.showCounts ? `<span class="text-[14px] font-black text-sky-600 pointer-events-none">${note.count}</span>` : ''}
                             </div>
                         </div>
                     `;
                 }).join('');
+
+                const keySigHTML = currentSong.keySignature === 'G' ? `<text x="35" y="38" font-size="28" font-family="sans-serif" font-weight="bold" fill="#1e293b" class="pointer-events-none z-10">♯</text>` : '';
 
                 measuresHTML += `
                     <div class="relative flex w-full h-[150px] select-none">
@@ -1070,59 +996,19 @@
                         ${i === totalMeasures - 1 ? '<div class="absolute right-1.5 top-[32px] h-[48px] border-r-4 border-slate-700 z-10 pointer-events-none"></div>' : ''}
 
                         ${i === 0 ? `
-                            <span class="absolute -top-[16px] left-2 text-[70px] leading-none text-slate-800 z-10 pointer-events-none">&#119070;</span>
-                            <div class="absolute left-[52px] top-[32px] flex flex-col font-serif text-2xl font-bold leading-[24px] text-slate-800 z-10 pointer-events-none">
+                            <svg class="absolute inset-0 w-full h-full pointer-events-none z-20 overflow-visible">
+                                <text x="10" y="70" font-size="70" fill="#1e293b">&#119070;</text>
+                                ${keySigHTML}
+                            </svg>
+                            <div class="absolute left-[${currentSong.keySignature === 'G' ? '60' : '52'}px] top-[32px] flex flex-col font-serif text-2xl font-bold leading-[24px] text-slate-800 z-10 pointer-events-none">
                                 <span>${currentSong.beatsPerMeasure}</span><span>4</span>
                             </div>
                         ` : ''}
 
                         <svg class="absolute inset-0 w-full h-full pointer-events-none z-20 overflow-visible">${beamSVGContent}</svg>
 
-                        <div class="absolute inset-0 flex items-stretch ${i === 0 ? 'pl-[76px]' : ''}">
+                        <div class="absolute inset-0 flex items-stretch ${i === 0 ? (currentSong.keySignature === 'G' ? 'pl-[90px]' : 'pl-[76px]') : ''}">
                             ${notesHTML}
-                        </div>
-                    </div>
-                `;
-            }
-
-            if (state.referenceFileUrl) {
-                const isImage = state.referenceFileType.startsWith('image/');
-                
-                let fileViewerHtml = '';
-                if (isImage) {
-                    fileViewerHtml = `
-                        <div class="absolute top-4 right-4 flex flex-col gap-2 z-30">
-                            <button onclick="app.zoomRef(0.25)" class="bg-indigo-600 hover:bg-indigo-500 text-white w-10 h-10 rounded-full shadow-lg font-black text-2xl leading-none flex items-center justify-center border-2 border-indigo-400">+</button>
-                            <button onclick="app.zoomRef(-0.25)" class="bg-indigo-600 hover:bg-indigo-500 text-white w-10 h-10 rounded-full shadow-lg font-black text-2xl leading-none flex items-center justify-center border-2 border-indigo-400">-</button>
-                        </div>
-                        <div class="w-full h-full overflow-auto flex items-start justify-center p-4">
-                            <img src="${state.referenceFileUrl}" style="transform: scale(${state.refZoom}); transform-origin: top center; transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);" class="max-w-none shadow-2xl bg-white" />
-                        </div>
-                    `;
-                } else if (state.referenceFileType === 'application/pdf') {
-                    fileViewerHtml = `<embed src="${state.referenceFileUrl}#toolbar=0" type="application/pdf" class="w-full h-full border-none bg-white" />`;
-                } else {
-                    fileViewerHtml = `<iframe src="${state.referenceFileUrl}" class="w-full h-full border-none bg-white"></iframe>`;
-                }
-
-                return `
-                    <div class="flex-1 flex gap-4 h-full min-h-0">
-                        <div class="flex-1 flex flex-col bg-white rounded-[2rem] shadow-xl border-[4px] border-slate-200 overflow-hidden relative min-h-0">
-                            <div class="bg-indigo-900 text-white font-bold p-2 flex justify-between items-center z-10 shadow-md px-4 shrink-0">
-                                <span class="flex items-center gap-2">
-                                    <i data-lucide="file-text" class="w-4 h-4"></i> Reference Score
-                                </span>
-                                <button onclick="app.closeReference()" class="text-rose-300 hover:text-rose-100 flex items-center"><i data-lucide="x" class="w-5 h-5"></i></button>
-                            </div>
-                            <div class="flex-1 bg-slate-800 w-full h-full relative overflow-hidden flex flex-col min-h-0">
-                                ${fileViewerHtml}
-                            </div>
-                        </div>
-                        
-                        <div class="flex-1 overflow-y-auto bg-white p-6 rounded-[2rem] shadow-xl border-[4px] border-slate-200 relative hide-scrollbar">
-                            <div class="grid grid-cols-1 gap-y-16 gap-x-0 w-full">
-                                ${measuresHTML}
-                            </div>
                         </div>
                     </div>
                 `;
@@ -1130,6 +1016,8 @@
 
             return `
                 <div class="flex-1 overflow-y-auto bg-white p-6 md:p-10 rounded-[2rem] shadow-xl border-[6px] border-slate-200 relative hide-scrollbar min-h-0">
+                    <h1 class="text-4xl font-black text-center mb-1 text-slate-800">${currentSong.title}</h1>
+                    <h3 class="text-md font-bold text-center mb-8 text-indigo-400 tracking-widest uppercase">${currentSong.belt} Belt${currentSong.isCustom ? ' (Custom)' : ''}</h3>
                     <div class="max-w-[1600px] mx-auto grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-y-16 gap-x-0">
                         ${measuresHTML}
                     </div>
@@ -1238,22 +1126,16 @@
 
         function render() {
             const root = document.getElementById('root');
-            
             let content = '';
-            if (state.appMode === 'song') content = renderSongMode();
+            if (state.appMode === 'song') content = renderSidebar() + renderSheetMusic();
             else if (state.appMode === 'training') content = renderTrainingMode();
             else if (state.appMode === 'game') content = renderGameMode();
-
-            root.innerHTML = renderNav() + `<div class="h-full w-full p-4 flex flex-col xl:flex-row gap-4 overflow-hidden min-h-0">${content}</div>`;
             
-            if(window.lucide) {
-                window.lucide.createIcons();
-            }
+            root.innerHTML = renderNav() + `<div class="h-full w-full p-4 flex flex-col xl:flex-row gap-4 overflow-hidden min-h-0">${content}</div>`;
+            if(window.lucide) window.lucide.createIcons();
         }
 
-        window.onload = () => {
-            appAPI.loadSong(5);
-        };
+        window.onload = () => appAPI.loadSong(1);
     </script>
 </body>
 </html>
